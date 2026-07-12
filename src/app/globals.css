@@ -1,0 +1,135 @@
+@import "tailwindcss";
+
+/* ============================================
+   MIP MOVEMENT CALENDAR — DESIGN TOKENS
+   Based on movementinfrastructureproject.org
+   ============================================ */
+
+@theme inline {
+  /* Colors — pulled directly from MIP site CSS */
+  --color-mip-purple: #39375b;
+  --color-mip-yellow: #c2e812;
+  --color-mip-cyan: #2de0fb;
+  --color-mip-black: #000000;
+  --color-mip-white: #ffffff;
+  --color-mip-gray-50: #fafafa;
+  --color-mip-gray-100: #f4f4f5;
+  --color-mip-gray-200: #e4e4e7;
+  --color-mip-gray-300: #d4d4d8;
+  --color-mip-gray-500: #71717a;
+  --color-mip-gray-700: #3f3f46;
+  --color-mip-gray-900: #18181b;
+
+  /* Overlay-calendar colors (mirror Trumba palette so migrated events keep their identity) */
+  --color-overlay-movement: #39375b;
+  --color-overlay-congressional: #e879a1;
+  --color-overlay-elections: #10b981;
+  --color-overlay-events: #06b6d4;
+  --color-overlay-holidays: #ec4899;
+  --color-overlay-recurring: #a78bfa;
+  --color-overlay-scotus: #1e40af;
+  --color-overlay-sports: #3b82f6;
+
+  /* Typography */
+  --font-sans: "Work Sans", ui-sans-serif, system-ui, sans-serif;
+
+  /* Layout tokens */
+  --max-width-content: 1400px;
+  --radius-button: 6.8px;
+
+  /* Semantic aliases */
+  --color-background: var(--color-mip-white);
+  --color-foreground: var(--color-mip-black);
+  --color-accent: var(--color-mip-purple);
+  --color-accent-bright: var(--color-mip-yellow);
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  line-height: 1.6em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================
+   MIP typographic utilities
+   ============================================ */
+
+.mip-heading {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  line-height: 1.2em;
+  letter-spacing: 0.01em;
+}
+
+.mip-nav-text {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 0.9rem;
+}
+
+.mip-button-text {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 1rem;
+}
+
+/* Signature MIP double-underline for H1s */
+.mip-double-underline {
+  text-decoration: underline double;
+  text-decoration-color: var(--color-mip-purple);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 8px;
+}
+
+/* Modernized card hover states (this is the "modernize" part) */
+.mip-card {
+  background: var(--color-mip-white);
+  border: 1px solid var(--color-mip-gray-200);
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.mip-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -4px rgba(57, 55, 91, 0.15);
+  border-color: var(--color-mip-purple);
+}
+
+/* Priority event badge */
+.mip-priority-badge {
+  background: var(--color-mip-yellow);
+  color: var(--color-mip-purple);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  border-radius: 3px;
+}
+
+/* Focus-visible ring for accessibility */
+*:focus-visible {
+  outline: 2px solid var(--color-mip-purple);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Scrollbar styling for horizontal featured bar */
+.mip-scroll-x {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-mip-gray-300) transparent;
+}
+.mip-scroll-x::-webkit-scrollbar {
+  height: 6px;
+}
+.mip-scroll-x::-webkit-scrollbar-thumb {
+  background: var(--color-mip-gray-300);
+  border-radius: 3px;
+}
