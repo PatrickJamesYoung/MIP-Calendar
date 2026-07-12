@@ -18,7 +18,7 @@ export function FeedView({ events }: FeedViewProps) {
   const tomorrow = dayKeyInTz(new Date(Date.now() + 86400000).toISOString());
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       {groups.map(({ dayKey, events }) => {
         // Parse the YYYY-MM-DD key as a local date at noon to avoid TZ off-by-one.
         const [yy, mm, dd] = dayKey.split("-").map(Number);
@@ -38,7 +38,7 @@ export function FeedView({ events }: FeedViewProps) {
 
         return (
           <section key={dayKey} aria-labelledby={`day-${dayKey}`}>
-            <div className="sticky top-[73px] z-10 bg-mip-white/95 backdrop-blur py-2 mb-3 border-b border-mip-gray-200">
+            <div className="sticky top-[65px] z-10 bg-mip-white/95 backdrop-blur py-1.5 mb-2 border-b border-mip-gray-200">
               <h2
                 id={`day-${dayKey}`}
                 className="mip-nav-text"
@@ -47,7 +47,7 @@ export function FeedView({ events }: FeedViewProps) {
                 {dayLabel}
               </h2>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-2">
               {events.map((event) => (
                 <EventCard key={event.id} event={event} />
               ))}

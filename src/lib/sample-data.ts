@@ -1,39 +1,24 @@
-import type { CalendarEvent } from "./types";
+import type { CalendarEvent, OverlayCalendar } from "./types";
 
 /**
  * Sample events for local dev and preview.
  * Delete this file after the Trumba migration is complete.
  */
 
-const OVERLAY_MOVEMENT = {
-  id: "sample-overlay-movement",
-  name: "Movement Calendar",
-  slug: "movement",
-  color: "#39375b",
-  default_visible: true,
-  sort_order: 1,
-  description: null,
-};
+export const SAMPLE_OVERLAYS: OverlayCalendar[] = [
+  { id: "sample-overlay-movement",      name: "Movement Calendar",           slug: "movement",       color: "#39375b", default_visible: true,  sort_order: 1, description: null },
+  { id: "sample-overlay-congress",      name: "Congressional Schedule",      slug: "congressional",  color: "#e879a1", default_visible: true,  sort_order: 2, description: null },
+  { id: "sample-overlay-elections",     name: "Elections",                   slug: "elections",      color: "#10b981", default_visible: true,  sort_order: 3, description: null },
+  { id: "sample-overlay-events",        name: "Events, Meetings, Festivals", slug: "events-meetings", color: "#06b6d4", default_visible: true,  sort_order: 4, description: null },
+  { id: "sample-overlay-holidays",      name: "Holidays",                    slug: "holidays",       color: "#ec4899", default_visible: true,  sort_order: 5, description: null },
+  { id: "sample-overlay-recurring",     name: "Recurring Events",            slug: "recurring",      color: "#a78bfa", default_visible: true,  sort_order: 6, description: null },
+  { id: "sample-overlay-scotus",        name: "SCOTUS",                      slug: "scotus",         color: "#1e40af", default_visible: true,  sort_order: 7, description: null },
+  { id: "sample-overlay-sports",        name: "Sports",                      slug: "sports",         color: "#3b82f6", default_visible: false, sort_order: 8, description: null },
+];
 
-const OVERLAY_CONGRESS = {
-  id: "sample-overlay-congress",
-  name: "Congressional Schedule",
-  slug: "congressional",
-  color: "#e879a1",
-  default_visible: true,
-  sort_order: 2,
-  description: null,
-};
-
-const OVERLAY_SCOTUS = {
-  id: "sample-overlay-scotus",
-  name: "SCOTUS",
-  slug: "scotus",
-  color: "#1e40af",
-  default_visible: true,
-  sort_order: 7,
-  description: null,
-};
+const OVERLAY_MOVEMENT = SAMPLE_OVERLAYS[0];
+const OVERLAY_CONGRESS = SAMPLE_OVERLAYS[1];
+const OVERLAY_SCOTUS = SAMPLE_OVERLAYS[6];
 
 const TYPE_ACTION = {
   id: "sample-type-action",
@@ -79,7 +64,8 @@ export const SAMPLE_EVENTS: CalendarEvent[] = [
     location_text: "33 Grant Circle NW, Washington DC",
     location_lat: null,
     location_lng: null,
-    image_url: null,
+    image_url:
+      "https://images.unsplash.com/photo-1591189863430-ab87e120f312?w=400&h=400&fit=crop",
     event_type_id: TYPE_MEETING.id,
     event_type: TYPE_MEETING,
     cost: "Free",
@@ -111,7 +97,8 @@ export const SAMPLE_EVENTS: CalendarEvent[] = [
     location_text: "Festival Center, 1640 Columbia Rd NW",
     location_lat: null,
     location_lng: null,
-    image_url: null,
+    image_url:
+      "https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=400&h=400&fit=crop",
     event_type_id: TYPE_TRAINING.id,
     event_type: TYPE_TRAINING,
     cost: "Free",
@@ -239,7 +226,8 @@ export const SAMPLE_EVENTS: CalendarEvent[] = [
     location_text: "33 Grant Circle NW",
     location_lat: null,
     location_lng: null,
-    image_url: null,
+    image_url:
+      "https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=400&h=400&fit=crop",
     event_type_id: TYPE_ACTION.id,
     event_type: TYPE_ACTION,
     cost: "Free",
