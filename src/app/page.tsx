@@ -1,19 +1,43 @@
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { CalendarShell } from "@/components/calendar-shell";
+import { createClient } from "@/lib/supabase/server";
 import { SAMPLE_EVENTS, SAMPLE_OVERLAYS } from "@/lib/sample-data";
+import type { CalendarEvent, OverlayCalendar } from "@/lib/types";
 
-export default function HomePage() {
-  // TODO: replace with real Supabase queries once schema is deployed.
-  const now = new Date();
-  const upcomingEvents = SAMPLE_EVENTS.filter(
-    (e) => new Date(e.starts_at) >= now
-  ).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  const supabase = await createClient();
+  const nowIso = new Date().toISOString();
+
+  const [{ data: overlays }, { data: events }] = await Promise.all([
+    supabase
+      .from("overlay_calendars")
+      .select("*")
+      .order("sort_order"),
+    supabase
+      .from("events")
+      .select(
+        "*, overlay_calendar:overlay_calendars(*), event_type:event_types(*)"
+      )
+      .eq("status", "published")
+      .gte("starts_at", nowIso)
+      .order("starts_at", { ascending: true })
+      .limit(100),
+  ]);
+
+  const hasData = (events?.length ?? 0) > 0 && (overlays?.length ?? 0) > 0;
+
+  // Fall back to sample data if the DB is empty so the page never looks broken
+  // during initial setup or if RLS is misconfigured.
+  const displayEvents = (hasData ? events : SAMPLE_EVENTS) as CalendarEvent[];
+  const displayOverlays = (hasData ? overlays : SAMPLE_OVERLAYS) as OverlayCalendar[];
 
   return (
     <div className="min-h-screen flex flex-col">
       <SiteHeader />
-      <CalendarShell events={upcomingEvents} overlays={SAMPLE_OVERLAYS} />
+      <CalendarShell events={displayEvents} overlays={displayOverlays} />
       <SiteFooter />
     </div>
   );
