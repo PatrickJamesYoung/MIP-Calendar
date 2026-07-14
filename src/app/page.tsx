@@ -9,7 +9,15 @@ export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const supabase = await createClient();
-  const nowIso = new Date().toISOString();
+
+  // Widen the window: grid views (month/week) need events from the recent past.
+  // 60 days back lets someone pick any month or week within roughly the last
+  // two months without an extra fetch. Future events fetched to the end of
+  // the following year.
+  const startWindow = new Date();
+  startWindow.setDate(startWindow.getDate() - 60);
+  const endWindow = new Date();
+  endWindow.setFullYear(endWindow.getFullYear() + 1);
 
   const [{ data: overlays }, { data: events }] = await Promise.all([
     supabase
@@ -22,9 +30,10 @@ export default async function HomePage() {
         "*, overlay_calendar:overlay_calendars(*), event_type:event_types(*)"
       )
       .eq("status", "published")
-      .gte("starts_at", nowIso)
+      .gte("starts_at", startWindow.toISOString())
+      .lte("starts_at", endWindow.toISOString())
       .order("starts_at", { ascending: true })
-      .limit(100),
+      .limit(2000),
   ]);
 
   const hasData = (events?.length ?? 0) > 0 && (overlays?.length ?? 0) > 0;

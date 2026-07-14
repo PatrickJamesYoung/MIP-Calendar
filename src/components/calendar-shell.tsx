@@ -1,22 +1,55 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { CalendarEvent, OverlayCalendar } from "@/lib/types";
 import { FeaturedBar } from "./featured-bar";
 import { FeedView } from "./feed-view";
+import { MonthView } from "./month-view";
+import { WeekView } from "./week-view";
 import { OverlayFilter } from "./overlay-filter";
+import { todayYmd } from "@/lib/calendar-utils";
 
 interface CalendarShellProps {
   events: CalendarEvent[];
   overlays: OverlayCalendar[];
 }
 
+type ViewMode = "feed" | "week" | "month";
+
 /**
- * Client wrapper that owns filter state and passes filtered events
- * down to the featured bar and feed view.
+ * Client wrapper that owns filter + view state and passes filtered events
+ * down to the featured bar and the currently selected view.
  */
 export function CalendarShell({ events, overlays }: CalendarShellProps) {
-  // Initial visible overlays: those flagged default_visible in the schema.
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Read initial view/anchor from URL so links are shareable
+  const initialView = (searchParams.get("view") as ViewMode | null) ?? "feed";
+  const initialDate = searchParams.get("date") ?? todayYmd();
+
+  const [view, setView] = useState<ViewMode>(
+    ["feed", "week", "month"].includes(initialView) ? initialView : "feed"
+  );
+  const [anchorYmd, setAnchorYmd] = useState<string>(initialDate);
+
+  // Sync state back to URL (shallow — doesn't refetch server data)
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (view === "feed") {
+      params.delete("view");
+      params.delete("date");
+    } else {
+      params.set("view", view);
+      params.set("date", anchorYmd);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `/?${qs}` : "/", { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, anchorYmd]);
+
+  // Overlay filter state
   const [visibleOverlayIds, setVisibleOverlayIds] = useState<Set<string>>(
     () => new Set(overlays.filter((o) => o.default_visible).map((o) => o.id))
   );
@@ -41,10 +74,17 @@ export function CalendarShell({ events, overlays }: CalendarShellProps) {
     );
   }, [events, visibleOverlayIds]);
 
+  // Feed view only shows upcoming; grid views show anything the query returned
   const now = new Date();
+  const nowIso = now.toISOString();
+  const upcomingEvents = useMemo(
+    () => filteredEvents.filter((e) => e.starts_at >= nowIso),
+    [filteredEvents, nowIso]
+  );
+
   const featuredEvents = useMemo(
     () =>
-      filteredEvents
+      upcomingEvents
         .filter((e) => {
           if (!e.is_featured) return false;
           if (e.featured_until && new Date(e.featured_until) < now) return false;
@@ -57,7 +97,7 @@ export function CalendarShell({ events, overlays }: CalendarShellProps) {
           return a.starts_at.localeCompare(b.starts_at);
         }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filteredEvents]
+    [upcomingEvents]
   );
 
   return (
@@ -94,41 +134,21 @@ export function CalendarShell({ events, overlays }: CalendarShellProps) {
           </aside>
 
           <div>
-            <div className="flex items-center gap-2 mb-4">
-              <button
-                className="mip-button-text px-3 py-1.5 bg-mip-purple text-mip-white"
-                style={{ borderRadius: "var(--radius-button)" }}
-              >
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
+              <ViewButton current={view} value="feed" onClick={setView}>
                 Feed
-              </button>
-              <button
-                className="mip-button-text px-3 py-1.5 text-mip-gray-500 hover:bg-mip-gray-100 cursor-not-allowed"
-                style={{ borderRadius: "var(--radius-button)" }}
-                disabled
-                title="Coming soon"
-              >
-                Day
-              </button>
-              <button
-                className="mip-button-text px-3 py-1.5 text-mip-gray-500 hover:bg-mip-gray-100 cursor-not-allowed"
-                style={{ borderRadius: "var(--radius-button)" }}
-                disabled
-                title="Coming soon"
-              >
+              </ViewButton>
+              <ViewButton current={view} value="week" onClick={setView}>
                 Week
-              </button>
-              <button
-                className="mip-button-text px-3 py-1.5 text-mip-gray-500 hover:bg-mip-gray-100 cursor-not-allowed"
-                style={{ borderRadius: "var(--radius-button)" }}
-                disabled
-                title="Coming soon"
-              >
+              </ViewButton>
+              <ViewButton current={view} value="month" onClick={setView}>
                 Month
-              </button>
+              </ViewButton>
 
               <div className="flex-1" />
               <span className="text-xs text-mip-gray-500">
-                {filteredEvents.length} event{filteredEvents.length === 1 ? "" : "s"}
+                {view === "feed" ? upcomingEvents.length : filteredEvents.length} event
+                {(view === "feed" ? upcomingEvents.length : filteredEvents.length) === 1 ? "" : "s"}
               </span>
             </div>
 
@@ -147,10 +167,52 @@ export function CalendarShell({ events, overlays }: CalendarShellProps) {
               </div>
             </details>
 
-            <FeedView events={filteredEvents} />
+            {view === "feed" && <FeedView events={upcomingEvents} />}
+            {view === "week" && (
+              <WeekView
+                events={filteredEvents}
+                anchorYmd={anchorYmd}
+                onAnchorChange={setAnchorYmd}
+              />
+            )}
+            {view === "month" && (
+              <MonthView
+                events={filteredEvents}
+                anchorYmd={anchorYmd}
+                onAnchorChange={setAnchorYmd}
+              />
+            )}
           </div>
         </div>
       </main>
     </>
+  );
+}
+
+function ViewButton({
+  current,
+  value,
+  onClick,
+  children,
+}: {
+  current: ViewMode;
+  value: ViewMode;
+  onClick: (v: ViewMode) => void;
+  children: React.ReactNode;
+}) {
+  const active = current === value;
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(value)}
+      className="mip-button-text px-3 py-1.5 transition-colors"
+      style={{
+        borderRadius: "var(--radius-button)",
+        backgroundColor: active ? "var(--color-mip-purple)" : "transparent",
+        color: active ? "var(--color-mip-white)" : "var(--color-mip-gray-700)",
+      }}
+    >
+      {children}
+    </button>
   );
 }
