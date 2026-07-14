@@ -8,13 +8,10 @@ export const dynamic = "force-dynamic";
 export default async function SubmitPage() {
   const supabase = await createClient();
 
-  const [{ data: overlays }, { data: eventTypes }] = await Promise.all([
-    supabase
-      .from("overlay_calendars")
-      .select("id, name, slug, color, sort_order")
-      .order("sort_order"),
-    supabase.from("event_types").select("id, name").order("sort_order"),
-  ]);
+  const { data: eventTypes } = await supabase
+    .from("event_types")
+    .select("id, name")
+    .order("sort_order");
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null;
 
@@ -42,7 +39,6 @@ export default async function SubmitPage() {
         </p>
 
         <SubmitForm
-          overlays={overlays ?? []}
           eventTypes={eventTypes ?? []}
           turnstileSiteKey={siteKey}
         />

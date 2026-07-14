@@ -8,22 +8,50 @@ import { ACCESSIBILITY_LABELS } from "@/lib/types";
 import type { AccessibilityFeature } from "@/lib/types";
 import { submitEventAction } from "./actions";
 
-interface Overlay {
-  id: string;
-  name: string;
-  slug: string;
-  color: string | null;
-}
-
 interface EventType {
   id: string;
   name: string;
 }
 
 interface Props {
-  overlays: Overlay[];
   eventTypes: EventType[];
   turnstileSiteKey: string | null;
+}
+
+// Compute the next hour in America/New_York, formatted for <input type="datetime-local">.
+// e.g. current NY time 2:38 PM → returns "2026-07-14T15:00".
+function nextHourNyDatetimeLocal(offsetHours = 1): string {
+  const now = new Date();
+  // Get the current wall-clock time in New_York as parts
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
+  const y = parseInt(get("year"));
+  const mo = parseInt(get("month"));
+  const d = parseInt(get("day"));
+  let h = parseInt(get("hour")) === 24 ? 0 : parseInt(get("hour"));
+  // Round up to next hour, then add offset
+  let targetH = h + offsetHours;
+  let targetD = d;
+  let targetMo = mo;
+  let targetY = y;
+  if (targetH >= 24) {
+    targetH -= 24;
+    // day rollover: construct a date and add a day
+    const roll = new Date(Date.UTC(y, mo - 1, d + 1));
+    targetY = roll.getUTCFullYear();
+    targetMo = roll.getUTCMonth() + 1;
+    targetD = roll.getUTCDate();
+  }
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${targetY}-${pad(targetMo)}-${pad(targetD)}T${pad(targetH)}:00`;
 }
 
 // Cloudflare Turnstile global
@@ -51,7 +79,7 @@ const ACCESSIBILITY_KEYS: AccessibilityFeature[] = [
   "other",
 ];
 
-export function SubmitForm({ overlays, eventTypes, turnstileSiteKey }: Props) {
+export function SubmitForm({ eventTypes, turnstileSiteKey }: Props) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -59,6 +87,56 @@ export function SubmitForm({ overlays, eventTypes, turnstileSiteKey }: Props) {
   const [turnstileToken, setTurnstileToken] = useState<string>("");
   const turnstileRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
+
+  // Image upload state
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+
+  // Datetime defaults: start=next hour (+1 from current), end=hour after that (+2)
+  const [startDefault, setStartDefault] = useState<string>("");
+  const [endDefault, setEndDefault] = useState<string>("");
+  useEffect(() => {
+    setStartDefault(nextHourNyDatetimeLocal(1));
+    setEndDefault(nextHourNyDatetimeLocal(2));
+  }, []);
+
+  const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
+  const ALLOWED_IMAGE_TYPES = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+  ];
+
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setImageError(null);
+    const f = e.target.files?.[0] ?? null;
+    if (!f) {
+      setImageFile(null);
+      setImagePreview(null);
+      return;
+    }
+    if (!ALLOWED_IMAGE_TYPES.includes(f.type)) {
+      setImageError("Unsupported file type. Please upload JPG, PNG, WebP, or GIF.");
+      setImageFile(null);
+      setImagePreview(null);
+      e.target.value = "";
+      return;
+    }
+    if (f.size > MAX_IMAGE_BYTES) {
+      setImageError(
+        `File is too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Max size is 5 MB.`
+      );
+      setImageFile(null);
+      setImagePreview(null);
+      e.target.value = "";
+      return;
+    }
+    setImageFile(f);
+    const url = URL.createObjectURL(f);
+    setImagePreview(url);
+  }
 
   // Render Turnstile widget when script loads
   useEffect(() => {
@@ -84,6 +162,11 @@ export function SubmitForm({ overlays, eventTypes, turnstileSiteKey }: Props) {
     setFieldErrors({});
     const formData = new FormData(e.currentTarget);
     if (turnstileToken) formData.set("turnstile_token", turnstileToken);
+    if (imageFile) {
+      formData.set("image_file", imageFile);
+    } else {
+      formData.delete("image_file");
+    }
     const eventTitle = (formData.get("title") as string) || "your event";
 
     startTransition(async () => {
@@ -214,12 +297,15 @@ export function SubmitForm({ overlays, eventTypes, turnstileSiteKey }: Props) {
               label="Starts"
               required
               error={fieldErrors.starts_at_local}
-              hint="Eastern time"
+              hint="Eastern time — you can type or use the picker"
             >
               <input
                 type="datetime-local"
                 name="starts_at_local"
                 required
+                step={300}
+                defaultValue={startDefault}
+                key={startDefault}
                 className="mip-input"
               />
             </Field>
@@ -227,6 +313,9 @@ export function SubmitForm({ overlays, eventTypes, turnstileSiteKey }: Props) {
               <input
                 type="datetime-local"
                 name="ends_at_local"
+                step={300}
+                defaultValue={endDefault}
+                key={endDefault}
                 className="mip-input"
               />
             </Field>
@@ -259,23 +348,6 @@ export function SubmitForm({ overlays, eventTypes, turnstileSiteKey }: Props) {
 
         {/* Section: Categorization */}
         <Section title="Categorization">
-          <Field
-            label="Which calendar does this belong to?"
-            hint="Helps admins route your event"
-          >
-            <select
-              name="overlay_calendar_id"
-              className="mip-input"
-              defaultValue=""
-            >
-              <option value="">Choose one…</option>
-              {overlays.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-          </Field>
           <Field label="Event type (optional)">
             <select
               name="event_type_id"
@@ -311,8 +383,49 @@ export function SubmitForm({ overlays, eventTypes, turnstileSiteKey }: Props) {
             />
           </Field>
           <Field
-            label="Event image URL"
-            hint="Direct link to a JPG or PNG hosted somewhere public"
+            label="Event image"
+            hint="JPG, PNG, WebP, or GIF. Max 5 MB."
+            error={fieldErrors.image_file}
+          >
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={handleImageChange}
+              className="block text-sm mip-input-file"
+            />
+            {imageError && (
+              <div className="mt-2 text-sm text-red-700 flex items-center gap-1">
+                <AlertCircle className="w-4 h-4" /> {imageError}
+              </div>
+            )}
+            {imagePreview && (
+              <div className="mt-3">
+                <div className="text-xs uppercase tracking-wider mip-caption-text mb-2">
+                  Preview
+                </div>
+                <img
+                  src={imagePreview}
+                  alt="Event image preview"
+                  className="max-w-xs max-h-48 border border-mip-gray-200"
+                  style={{ borderRadius: "var(--radius-button)" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImageFile(null);
+                    setImagePreview(null);
+                    setImageError(null);
+                  }}
+                  className="mt-2 text-xs text-mip-purple hover:underline"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+          </Field>
+          <Field
+            label="Or paste an image URL (optional)"
+            hint="If you already have your flyer hosted somewhere"
             error={fieldErrors.image_url}
           >
             <input

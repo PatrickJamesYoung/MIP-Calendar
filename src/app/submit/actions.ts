@@ -8,6 +8,15 @@ import {
   notifyAdminsOfNewSubmission,
   emailSubmitterReceived,
 } from "@/lib/email";
+import { uploadSubmissionImage } from "@/lib/storage";
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
 
 // zod schema — mirrors form fields
 const submitSchema = z.object({
@@ -28,7 +37,8 @@ const submitSchema = z.object({
   host_org: z.string().max(200).optional().or(z.literal("")),
   web_link: z.string().url().max(500).optional().or(z.literal("")),
   image_url: z.string().url().max(500).optional().or(z.literal("")),
-  overlay_calendar_id: z.string().uuid().optional().or(z.literal("")),
+  // overlay_calendar_id is NOT accepted from the client — public submissions
+  // always route to the Movement Calendar overlay. Admins can reassign later.
   event_type_id: z.string().uuid().optional().or(z.literal("")),
   accessibility: z.array(z.string()).optional(),
 
@@ -127,8 +137,33 @@ export async function submitEventAction(
     };
   }
 
-  // Zod validation
-  const raw = Object.fromEntries(formData);
+  // Extract file BEFORE Object.fromEntries so it doesn't get stringified
+  const imageFileRaw = formData.get("image_file");
+  const imageFile =
+    imageFileRaw instanceof File && imageFileRaw.size > 0 ? imageFileRaw : null;
+  if (imageFile) {
+    if (!ALLOWED_IMAGE_TYPES.has(imageFile.type)) {
+      return {
+        ok: false,
+        error: "Unsupported image type. Please upload JPG, PNG, WebP, or GIF.",
+        fields: { image_file: "Unsupported file type" },
+      };
+    }
+    if (imageFile.size > MAX_IMAGE_BYTES) {
+      return {
+        ok: false,
+        error: "Image file is too large. Max size is 5 MB.",
+        fields: { image_file: "File too large" },
+      };
+    }
+  }
+
+  // Zod validation (strip File-typed entries so zod doesn't choke)
+  const raw: Record<string, FormDataEntryValue> = {};
+  for (const [k, v] of formData.entries()) {
+    if (v instanceof File) continue;
+    raw[k] = v;
+  }
   // accessibility is a multi-checkbox; pull as array separately
   const accessibility = formData.getAll("accessibility").map((v) => String(v));
   const parsed = submitSchema.safeParse({ ...raw, accessibility });
@@ -168,6 +203,15 @@ export async function submitEventAction(
     return { ok: false, error: `Invalid date: ${(e as Error).message}` };
   }
 
+  // Look up the Movement Calendar overlay by slug (single source of truth).
+  // If the seed row was renamed we fall back to null and admins can retag.
+  const supabase = createAdminClient();
+  const { data: movementOverlay } = await supabase
+    .from("overlay_calendars")
+    .select("id")
+    .eq("slug", "movement")
+    .maybeSingle();
+
   const event_payload = {
     title: data.title,
     description: data.description || null,
@@ -181,13 +225,12 @@ export async function submitEventAction(
     host_org: data.host_org || null,
     web_link: data.web_link || null,
     image_url: data.image_url || null,
-    overlay_calendar_id: data.overlay_calendar_id || null,
+    overlay_calendar_id: movementOverlay?.id ?? null,
     event_type_id: data.event_type_id || null,
     accessibility: accessibility.length > 0 ? accessibility : [],
   };
 
   // Insert
-  const supabase = createAdminClient();
   const { data: inserted, error } = await supabase
     .from("submissions")
     .insert({
@@ -204,6 +247,23 @@ export async function submitEventAction(
   if (error || !inserted) {
     console.error("[submit] insert failed", error);
     return { ok: false, error: `Could not save submission: ${error?.message ?? "unknown"}` };
+  }
+
+  // Upload image (if any) and patch the submission with the resulting URL.
+  // We do this after insert so we can namespace the object path by submission id.
+  if (imageFile) {
+    try {
+      const publicUrl = await uploadSubmissionImage(imageFile, inserted.id);
+      const updatedPayload = { ...event_payload, image_url: publicUrl };
+      await supabase
+        .from("submissions")
+        .update({ event_payload: updatedPayload })
+        .eq("id", inserted.id);
+    } catch (uploadErr) {
+      // Image upload failed but the submission itself is saved. Log and continue —
+      // an admin can ask the submitter to resend the image if needed.
+      console.error("[submit] image upload failed", uploadErr);
+    }
   }
 
   // Email (fire-and-forget — don't block the response)
