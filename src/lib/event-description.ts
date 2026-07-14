@@ -13,8 +13,6 @@
  * can safely render Trumba's <br>, <strong>, <em>, <a> markup instead of
  * showing raw tags to the user.
  */
-import DOMPurify from "isomorphic-dompurify";
-
 /**
  * Field-name prefixes Trumba auto-prepends to descriptions.
  * We drop everything up to (and including) the first blank line
@@ -93,50 +91,81 @@ export function stripTrumbaPreamble(html: string): string {
 }
 
 /**
- * Sanitize HTML for safe rendering. Allows a small whitelist of tags that
- * Trumba emits, and forces target="_blank" rel="noopener noreferrer" on
- * all anchors so external links open safely in a new tab.
+ * Small allow-list HTML sanitizer for event descriptions.
+ *
+ * Rather than pulling in DOMPurify + jsdom on the server (which is a fragile
+ * dep in serverless environments), we do a targeted sanitize tuned to the
+ * exact subset of HTML Trumba emits. Anything that isn't in the whitelist
+ * is stripped tag-and-all.
+ *
+ * The whitelist mirrors what Trumba actually uses in DESCRIPTION fields:
+ *   <br> <strong> <b> <em> <i> <u> <p> <ul> <ol> <li> <blockquote>
+ *   <h2> <h3> <h4> <hr> <a href=""> <span> <div>
+ *
+ * On anchors we keep href only, force target="_blank" rel="noopener noreferrer",
+ * and reject any URL scheme other than http:, https:, or mailto:. Everything
+ * else (including javascript:, data:, and vbscript:) becomes href="#".
  */
+
+const ALLOWED_VOID = new Set(["br", "hr"]);
+const ALLOWED_TAGS = new Set([
+  "a",
+  "b",
+  "i",
+  "u",
+  "em",
+  "strong",
+  "p",
+  "ul",
+  "ol",
+  "li",
+  "blockquote",
+  "h2",
+  "h3",
+  "h4",
+  "span",
+  "div",
+  ...ALLOWED_VOID,
+]);
+
+function safeHref(url: string): string {
+  const trimmed = url.trim();
+  if (/^(https?:|mailto:)/i.test(trimmed)) return trimmed;
+  if (/^\/[^/]/.test(trimmed)) return trimmed; // relative path
+  return "#";
+}
+
 export function sanitizeDescription(html: string): string {
   if (!html) return "";
 
-  const cleaned = DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: [
-      "a",
-      "b",
-      "i",
-      "u",
-      "em",
-      "strong",
-      "br",
-      "p",
-      "ul",
-      "ol",
-      "li",
-      "blockquote",
-      "h2",
-      "h3",
-      "h4",
-      "hr",
-      "code",
-      "pre",
-      "span",
-      "div",
-    ],
-    ALLOWED_ATTR: ["href", "title", "dir"],
-    ALLOW_DATA_ATTR: false,
+  // Strip script/style blocks entirely (content included).
+  let s = html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "");
+
+  // Walk every tag and either rewrite or drop it. Text nodes pass through
+  // (they were already entity-decoded during the iCal parse step).
+  s = s.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (_full, rawName: string, rawAttrs: string) => {
+    const name = rawName.toLowerCase();
+    const isClosing = _full.startsWith("</");
+
+    if (!ALLOWED_TAGS.has(name)) return "";
+
+    if (isClosing) {
+      if (ALLOWED_VOID.has(name)) return ""; // <br>, <hr> have no closing form
+      return `</${name}>`;
+    }
+
+    // Opening / self-closing tag. For anchors, extract and sanitize href.
+    if (name === "a") {
+      const hrefMatch = rawAttrs.match(/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/i);
+      const href = safeHref(hrefMatch ? (hrefMatch[1] ?? hrefMatch[2] ?? hrefMatch[3] ?? "#") : "#");
+      return `<a href="${href}" target="_blank" rel="noopener noreferrer">`;
+    }
+
+    if (ALLOWED_VOID.has(name)) return `<${name}>`;
+    return `<${name}>`;
   });
 
-  // Force target/rel on all <a>. DOMPurify strips target/rel from ALLOWED_ATTR
-  // if we don't list them, but adding them back and then post-processing is
-  // simpler than a hook — do it with a lightweight string rewrite.
-  return cleaned.replace(
-    /<a\s+([^>]*?)href="([^"]+)"([^>]*?)>/gi,
-    (_m, pre, href, post) => {
-      const safeHref = href.startsWith("javascript:") ? "#" : href;
-      return `<a ${pre}href="${safeHref}"${post} target="_blank" rel="noopener noreferrer">`;
-    }
-  );
+  return s;
 }
 
 /**
