@@ -26,20 +26,26 @@ export function CalendarShell({ events, overlays }: CalendarShellProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Read initial view/anchor from URL so links are shareable
-  const initialView = (searchParams.get("view") as ViewMode | null) ?? "feed";
+  // Read initial view/anchor from URL so links are shareable.
+  // Week is the default when the user lands with no ?view= param.
+  const initialView = (searchParams.get("view") as ViewMode | null) ?? "week";
   const initialDate = searchParams.get("date") ?? todayYmd();
 
   const [view, setView] = useState<ViewMode>(
-    ["feed", "3day", "week", "month"].includes(initialView) ? initialView : "feed"
+    ["feed", "3day", "week", "month"].includes(initialView) ? initialView : "week"
   );
   const [anchorYmd, setAnchorYmd] = useState<string>(initialDate);
 
-  // Sync state back to URL (shallow — doesn't refetch server data)
+  // Sync state back to URL (shallow — doesn't refetch server data).
+  // Week is the default view, so we omit its params from the URL to keep
+  // /calendar clean; other views always carry both params.
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
-    if (view === "feed") {
+    if (view === "week") {
       params.delete("view");
+      params.delete("date");
+    } else if (view === "feed") {
+      params.set("view", "feed");
       params.delete("date");
     } else {
       params.set("view", view);
