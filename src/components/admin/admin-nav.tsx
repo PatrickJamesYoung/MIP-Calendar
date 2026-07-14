@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/admin/submissions", label: "Submissions" },
   { href: "/admin/overlays", label: "Calendars" },
   { href: "/admin/admins", label: "Admins", superOnly: true },
+  { href: "/admin/import", label: "Import", superOnly: true },
   { href: "/admin/audit", label: "Audit" },
 ];
 
