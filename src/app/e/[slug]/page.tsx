@@ -227,7 +227,7 @@ export default async function EventDetailPage({ params }: Props) {
                 <img
                   src={resolved.image_url}
                   alt=""
-                  className="w-full max-h-[480px] object-cover mb-8"
+                  className="max-w-full max-h-[480px] w-auto h-auto object-contain mb-8"
                   style={{ borderRadius: "var(--radius-button)" }}
                 />
               )}
