@@ -6,6 +6,7 @@ import type { CalendarEvent, OverlayCalendar } from "@/lib/types";
 import { FeaturedBar } from "./featured-bar";
 import { FeedView } from "./feed-view";
 import { MonthView } from "./month-view";
+import { ThreeDayView } from "./three-day-view";
 import { WeekView } from "./week-view";
 import { OverlayFilter } from "./overlay-filter";
 import { todayYmd } from "@/lib/calendar-utils";
@@ -15,7 +16,7 @@ interface CalendarShellProps {
   overlays: OverlayCalendar[];
 }
 
-type ViewMode = "feed" | "week" | "month";
+type ViewMode = "feed" | "3day" | "week" | "month";
 
 /**
  * Client wrapper that owns filter + view state and passes filtered events
@@ -30,7 +31,7 @@ export function CalendarShell({ events, overlays }: CalendarShellProps) {
   const initialDate = searchParams.get("date") ?? todayYmd();
 
   const [view, setView] = useState<ViewMode>(
-    ["feed", "week", "month"].includes(initialView) ? initialView : "feed"
+    ["feed", "3day", "week", "month"].includes(initialView) ? initialView : "feed"
   );
   const [anchorYmd, setAnchorYmd] = useState<string>(initialDate);
 
@@ -138,6 +139,9 @@ export function CalendarShell({ events, overlays }: CalendarShellProps) {
               <ViewButton current={view} value="feed" onClick={setView}>
                 Feed
               </ViewButton>
+              <ViewButton current={view} value="3day" onClick={setView}>
+                3-Day
+              </ViewButton>
               <ViewButton current={view} value="week" onClick={setView}>
                 Week
               </ViewButton>
@@ -168,6 +172,13 @@ export function CalendarShell({ events, overlays }: CalendarShellProps) {
             </details>
 
             {view === "feed" && <FeedView events={upcomingEvents} />}
+            {view === "3day" && (
+              <ThreeDayView
+                events={filteredEvents}
+                anchorYmd={anchorYmd}
+                onAnchorChange={setAnchorYmd}
+              />
+            )}
             {view === "week" && (
               <WeekView
                 events={filteredEvents}
