@@ -30,6 +30,9 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install Python deps
+        run: pip install -r ingest/requirements.txt
+
       - name: Prepare RUN_DIR
         id: prep
         run: |
