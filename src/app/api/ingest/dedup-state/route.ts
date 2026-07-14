@@ -132,11 +132,13 @@ export async function GET(req: Request) {
   }
 
   // Runner.py dedupes exact matches on (source, title, date) using this
-  // shape, and then does a *fuzzy* match against raw_trumba.json (populated
-  // from the same DB rows in the caller's fetch step) with a 0.72 similarity
-  // threshold and "Free DC " prefix stripping. Between the two, cross-
-  // publisher duplicates like "Freedom Dreaming Session 1" (Grassroots) vs.
-  // "Free DC Freedom Dreaming Session 1" (Trumba import) get caught.
+  // shape, and then does a *fuzzy* match against a legacy-named
+  // raw_trumba.json file that the caller populates from these same DB rows.
+  // Trumba itself is deprecated — this calendar's DB is now authoritative.
+  // The fuzzy path uses SequenceMatcher with a 0.72 similarity threshold and
+  // strips the "Free DC " prefix, so cross-publisher duplicates like
+  // "Freedom Dreaming Session 1" (Grassroots) vs. "Free DC Freedom Dreaming
+  // Session 1" (existing DB row) get caught.
   return Response.json(
     { rows, count: rows.length, fetched_at: nowIso },
     { status: 200 }

@@ -178,13 +178,23 @@ def fetch_existing_rows() -> None:
 
 
 def write_trumba_from_db() -> None:
-    """Convert the local DB rows into runner.py's expected `raw_trumba.json`
-    shape so its fuzzy matcher (SequenceMatcher, 0.72 threshold, strips the
-    "Free DC" prefix) can catch cross-publisher duplicates like a Grassroots
-    DC listing that already exists in the DB as a Trumba-imported Free DC row.
+    """Populate runner.py's `raw_trumba.json` with rows from THIS calendar's
+    database so its fuzzy-match dedup path fires against what we've already
+    published or queued — not against a retired Trumba feed.
 
-    We reuse existing_rows.json (already fetched) and translate each row to
-    `{title, startDateTime}` — the exact fields load_trumba() accepts.
+    Naming note: `raw_trumba.json` is a legacy filename inside runner.py from
+    when Trumba was the source of truth. Trumba is being deprecated; this
+    calendar's DB is now authoritative. We keep the filename because we
+    vowed not to modify runner.py, but conceptually this is
+    "raw_current_calendar.json".
+
+    The runner's fuzzy matcher (SequenceMatcher, 0.72 threshold, strips the
+    "Free DC " prefix) catches cross-publisher duplicates like a Grassroots
+    DC listing of the same event a Free DC listing already has in our DB.
+
+    We reuse existing_rows.json (already fetched from /api/ingest/dedup-state)
+    and translate each row to `{title, startDateTime}` — the exact fields
+    load_trumba() accepts.
     """
     ex_path = RUN_DIR / "existing_rows.json"
     if not ex_path.exists():
