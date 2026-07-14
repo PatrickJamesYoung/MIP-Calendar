@@ -10,7 +10,7 @@ import {
   monthGridCells,
   monthYearLabel,
   shortDayLabel,
-  timeLabel,
+  timeLabel, // used by day popover
   todayYmd,
 } from "@/lib/calendar-utils";
 
@@ -185,10 +185,9 @@ function EventPill({ event }: { event: CalendarEvent }) {
         color: "var(--color-mip-gray-900)",
         borderLeft: `3px solid ${color}`,
       }}
-      title={event.title}
+      title={`${timeLabel(event.starts_at)} — ${event.title}`}
     >
-      <span className="font-medium">{timeLabel(event.starts_at)}</span>
-      <span className="ml-1">{event.title}</span>
+      {event.title}
     </Link>
   );
 }

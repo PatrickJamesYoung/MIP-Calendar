@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { CalendarEvent } from "@/lib/types";
@@ -22,14 +22,14 @@ interface Props {
   onAnchorChange: (ymd: string) => void;
 }
 
-// 7 AM to 10 PM by default — covers the vast majority of civic events.
-// Anything outside this range gets clamped into the top/bottom slot.
+// 7 AM to 10 PM — covers the vast majority of civic events.
+// Events outside this window still show up clamped to the top/bottom edge.
 const HOUR_START = 7;
 const HOUR_END = 22;
 const HOURS = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i);
-const PX_PER_HOUR = 48;
+const PX_PER_HOUR = 56;
 const TOTAL_HEIGHT = (HOUR_END - HOUR_START) * PX_PER_HOUR;
-const GUTTER_PX = 56; // width of the time-label gutter
+const GUTTER_PX = 52;
 
 export function WeekView({ events, anchorYmd, onAnchorChange }: Props) {
   const days = useMemo(() => weekDays(anchorYmd), [anchorYmd]);
@@ -44,6 +44,39 @@ export function WeekView({ events, anchorYmd, onAnchorChange }: Props) {
     firstParts.month === lastParts.month
       ? monthYearLabel(days[0])
       : `${monthYearLabel(days[0])} – ${monthYearLabel(days[6])}`;
+
+  // Current-time indicator (only visible on today's column, only when today
+  // is in the visible week and the current time falls inside the displayed
+  // hour range).
+  const [nowMinutes, setNowMinutes] = useState<number | null>(null);
+  useEffect(() => {
+    const update = () => {
+      const now = new Date();
+      const { hour, minute } = partsInTz(now);
+      const mins = hour * 60 + minute;
+      if (mins >= HOUR_START * 60 && mins <= HOUR_END * 60) {
+        setNowMinutes(mins);
+      } else {
+        setNowMinutes(null);
+      }
+    };
+    update();
+    const id = setInterval(update, 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const todayColIdx = days.indexOf(today);
+  const showNowLine = todayColIdx >= 0 && nowMinutes !== null;
+  const nowLineTop = showNowLine
+    ? ((nowMinutes! - HOUR_START * 60) / 60) * PX_PER_HOUR
+    : 0;
+
+  // Auto-scroll to a reasonable morning offset if the container is scrollable
+  const gridRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!gridRef.current) return;
+    // Scroll to just before 9 AM = 2 hours after HOUR_START
+    gridRef.current.scrollTop = Math.max(0, 2 * PX_PER_HOUR - 20);
+  }, []);
 
   return (
     <div>
@@ -82,11 +115,11 @@ export function WeekView({ events, anchorYmd, onAnchorChange }: Props) {
 
       {/* Column headers (day names + numbers) */}
       <div
-        className="grid border-t border-l border-mip-gray-200 sticky top-16 bg-white z-10"
+        className="grid border-t border-l border-r border-mip-gray-200 bg-white sticky top-16 z-10"
         style={{ gridTemplateColumns: `${GUTTER_PX}px repeat(7, 1fr)` }}
       >
-        <div className="border-r border-b border-mip-gray-200 bg-mip-gray-100" />
-        {days.map((ymd) => {
+        <div className="bg-mip-gray-100 border-r border-mip-gray-200" />
+        {days.map((ymd, idx) => {
           const [, , dayStr] = ymd.split("-");
           const dayNum = parseInt(dayStr);
           const d = ymdToDate(ymd);
@@ -95,17 +128,18 @@ export function WeekView({ events, anchorYmd, onAnchorChange }: Props) {
             weekday: "short",
           }).format(d);
           const isToday = ymd === today;
+          const isLast = idx === days.length - 1;
           return (
             <div
               key={ymd}
-              className="border-r border-b border-mip-gray-200 px-2 py-1.5 text-center"
-              style={{ backgroundColor: isToday ? "rgba(57, 55, 91, 0.05)" : "white" }}
+              className={`px-2 py-2 text-center ${isLast ? "" : "border-r"} border-mip-gray-200`}
+              style={{ backgroundColor: isToday ? "rgba(57, 55, 91, 0.04)" : "white" }}
             >
               <div className="text-[10px] uppercase tracking-wider font-semibold text-mip-gray-600">
                 {wd}
               </div>
               <div
-                className={`text-lg font-semibold mt-0.5 inline-flex items-center justify-center w-8 h-8 ${
+                className={`text-base font-semibold mt-1 inline-flex items-center justify-center w-7 h-7 ${
                   isToday ? "bg-mip-purple text-white rounded-full" : ""
                 }`}
                 style={{
@@ -121,50 +155,71 @@ export function WeekView({ events, anchorYmd, onAnchorChange }: Props) {
 
       {/* Time grid */}
       <div
-        className="grid border-l border-mip-gray-200"
+        ref={gridRef}
+        className="grid border-l border-r border-b border-mip-gray-200 relative overflow-auto"
         style={{
           gridTemplateColumns: `${GUTTER_PX}px repeat(7, 1fr)`,
-          position: "relative",
+          maxHeight: "70vh",
         }}
       >
         {/* Time gutter column */}
-        <div className="border-r border-mip-gray-200 relative" style={{ height: TOTAL_HEIGHT }}>
-          {HOURS.slice(0, -1).map((h, i) => (
+        <div
+          className="border-r border-mip-gray-200 relative bg-white"
+          style={{ height: TOTAL_HEIGHT }}
+        >
+          {HOURS.map((h, i) => (
             <div
               key={h}
-              className="absolute right-2 -translate-y-1/2 text-[11px] text-mip-gray-500"
-              style={{ top: (i + 1) * PX_PER_HOUR }}
+              className="absolute right-2 text-[10px] font-medium text-mip-gray-500 uppercase tracking-wider"
+              style={{
+                top: i * PX_PER_HOUR,
+                transform: "translateY(-0.4em)",
+              }}
             >
-              {formatHour(h + 1)}
+              {i === 0 ? "" : formatHour(h)}
             </div>
           ))}
         </div>
 
         {/* Day columns */}
-        {days.map((ymd) => {
+        {days.map((ymd, colIdx) => {
           const dayEvents = eventsByDay.get(ymd) ?? [];
           const isToday = ymd === today;
+          const isLast = colIdx === days.length - 1;
           return (
             <div
               key={ymd}
-              className="border-r border-mip-gray-200 relative"
+              className={`${isLast ? "" : "border-r"} border-mip-gray-200 relative`}
               style={{
                 height: TOTAL_HEIGHT,
-                backgroundColor: isToday ? "rgba(57, 55, 91, 0.03)" : "white",
+                backgroundColor: isToday ? "rgba(57, 55, 91, 0.025)" : "white",
               }}
             >
-              {/* Hour lines */}
-              {HOURS.slice(0, -1).map((_, i) => (
+              {/* Hour lines - light gray */}
+              {HOURS.slice(1).map((_, i) => (
                 <div
                   key={i}
-                  className="absolute inset-x-0 border-t border-mip-gray-200"
-                  style={{ top: (i + 1) * PX_PER_HOUR }}
+                  className="absolute inset-x-0"
+                  style={{
+                    top: (i + 1) * PX_PER_HOUR,
+                    borderTop: "1px solid var(--color-mip-gray-200, #e5e5e5)",
+                  }}
                 />
               ))}
               {/* Event blocks */}
               {layoutEvents(dayEvents).map((laid) => (
                 <EventBlock key={laid.event.id} laid={laid} />
               ))}
+              {/* Current-time indicator */}
+              {isToday && showNowLine && (
+                <div
+                  className="absolute inset-x-0 pointer-events-none z-20"
+                  style={{ top: nowLineTop }}
+                >
+                  <div className="absolute -left-1 -top-1 w-2 h-2 rounded-full bg-red-500" />
+                  <div className="border-t-2 border-red-500" />
+                </div>
+              )}
             </div>
           );
         })}
@@ -182,25 +237,23 @@ interface LaidEvent {
 }
 
 /**
- * Very simple side-by-side overlap layout: compute overlap groups, then
- * within each group assign equal-width columns.
+ * Side-by-side overlap layout. Sort by start time, walk through building
+ * "clusters" of overlapping events, then within each cluster assign the
+ * leftmost free column and distribute the horizontal space equally.
  */
 function layoutEvents(dayEvents: CalendarEvent[]): LaidEvent[] {
-  // First convert to time boxes
   type Box = { event: CalendarEvent; startMin: number; endMin: number };
   const boxes: Box[] = dayEvents.map((event) => {
     const startMin = minutesOfDay(event.starts_at);
     const rawEndMin = event.ends_at
       ? minutesOfDay(event.ends_at)
       : startMin + 60;
-    // If the event ends the next day, cap at 24h
     const endMin = rawEndMin < startMin ? 24 * 60 : rawEndMin;
     return { event, startMin, endMin };
   });
 
   boxes.sort((a, b) => a.startMin - b.startMin);
 
-  // Assign columns to overlapping events
   interface Assigned extends Box {
     col: number;
     totalCols: number;
@@ -210,32 +263,25 @@ function layoutEvents(dayEvents: CalendarEvent[]): LaidEvent[] {
   let currentCluster: Assigned[] = [];
 
   for (const b of boxes) {
-    // If current cluster empty, start fresh
     if (currentCluster.length === 0) {
-      const a: Assigned = { ...b, col: 0, totalCols: 1 };
-      currentCluster.push(a);
+      currentCluster.push({ ...b, col: 0, totalCols: 1 });
       continue;
     }
-    // Check if this event overlaps anything in current cluster
     const clusterEnd = Math.max(...currentCluster.map((c) => c.endMin));
     if (b.startMin < clusterEnd) {
-      // Overlap: find first free column
       const usedCols = new Set(
         currentCluster.filter((c) => c.endMin > b.startMin).map((c) => c.col)
       );
       let col = 0;
       while (usedCols.has(col)) col++;
-      const a: Assigned = { ...b, col, totalCols: 1 };
-      currentCluster.push(a);
+      currentCluster.push({ ...b, col, totalCols: 1 });
     } else {
-      // Cluster done — commit and start new
       clusters.push(currentCluster);
       currentCluster = [{ ...b, col: 0, totalCols: 1 }];
     }
   }
   if (currentCluster.length > 0) clusters.push(currentCluster);
 
-  // Set totalCols per cluster
   for (const cluster of clusters) {
     const totalCols = Math.max(...cluster.map((c) => c.col)) + 1;
     for (const c of cluster) c.totalCols = totalCols;
@@ -249,7 +295,7 @@ function layoutEvents(dayEvents: CalendarEvent[]): LaidEvent[] {
   const heightPx = (start: number, end: number) => {
     const s = Math.max(start, HOUR_START * 60);
     const e = Math.min(end, HOUR_END * 60);
-    return Math.max(20, ((e - s) / 60) * PX_PER_HOUR);
+    return Math.max(22, ((e - s) / 60) * PX_PER_HOUR);
   };
 
   return assigned.map((a) => ({
@@ -263,28 +309,42 @@ function layoutEvents(dayEvents: CalendarEvent[]): LaidEvent[] {
 
 function EventBlock({ laid }: { laid: LaidEvent }) {
   const color = laid.event.overlay_calendar?.color ?? "#39375b";
+  const short = laid.heightPx < 44;
   return (
     <Link
       href={`/e/${laid.event.slug}`}
       className="absolute overflow-hidden hover:brightness-95 transition-all"
       style={{
-        top: laid.topPx,
-        height: laid.heightPx,
+        top: laid.topPx + 1,
+        height: laid.heightPx - 2,
         left: `calc(${laid.leftPct}% + 2px)`,
         width: `calc(${laid.widthPct}% - 4px)`,
         backgroundColor: `${color}22`,
         borderLeft: `3px solid ${color}`,
         borderRadius: "var(--radius-button)",
-        padding: "4px 6px",
-        fontSize: "11px",
-        lineHeight: "1.25",
+        padding: short ? "2px 6px" : "4px 6px",
+        fontSize: "12px",
+        lineHeight: "1.2",
         color: "var(--color-mip-gray-900)",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: short ? "center" : "flex-start",
+        gap: 2,
       }}
       title={`${laid.event.title} — ${timeLabel(laid.event.starts_at)}`}
     >
-      <div className="font-semibold truncate">{laid.event.title}</div>
-      {laid.heightPx > 32 && (
-        <div className="text-[10px] mip-caption-text mt-0.5">
+      <div
+        className="font-semibold overflow-hidden"
+        style={{
+          display: "-webkit-box",
+          WebkitLineClamp: short ? 1 : 2,
+          WebkitBoxOrient: "vertical",
+        }}
+      >
+        {laid.event.title}
+      </div>
+      {!short && (
+        <div className="text-[10px] mip-caption-text opacity-80">
           {timeLabel(laid.event.starts_at)}
         </div>
       )}

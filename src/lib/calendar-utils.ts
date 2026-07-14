@@ -146,8 +146,11 @@ export function weekDays(anchorYmd: string): string[] {
 
 /**
  * Group events by their local-day YYYY-MM-DD key.
+ *
+ * Sort within each day: Movement Calendar events first (they're our own
+ * events and matter most to users), then everything else by start time.
  */
-export function groupEventsByDay<E extends { starts_at: string }>(
+export function groupEventsByDay<E extends { starts_at: string; overlay_calendar?: { slug?: string } | null }>(
   events: E[],
   tz = CAL_TZ
 ): Map<string, E[]> {
@@ -158,9 +161,13 @@ export function groupEventsByDay<E extends { starts_at: string }>(
     if (bucket) bucket.push(e);
     else map.set(key, [e]);
   }
-  // Sort each bucket by start time
   for (const bucket of map.values()) {
-    bucket.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+    bucket.sort((a, b) => {
+      const aMovement = a.overlay_calendar?.slug === "movement" ? 0 : 1;
+      const bMovement = b.overlay_calendar?.slug === "movement" ? 0 : 1;
+      if (aMovement !== bMovement) return aMovement - bMovement;
+      return a.starts_at.localeCompare(b.starts_at);
+    });
   }
   return map;
 }
