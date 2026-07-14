@@ -177,12 +177,51 @@ def fetch_existing_rows() -> None:
     print(f"[dedup] {len(rows)} existing rows loaded")
 
 
-def write_empty_trumba() -> None:
-    """Trumba cross-check is retired; runner.py still reads raw_trumba.json,
-    so we hand it an empty list. runner.py's Trumba matcher becomes a no-op,
-    which is what we want — dedup happens entirely via existing_rows.json.
+def write_trumba_from_db() -> None:
+    """Convert the local DB rows into runner.py's expected `raw_trumba.json`
+    shape so its fuzzy matcher (SequenceMatcher, 0.72 threshold, strips the
+    "Free DC" prefix) can catch cross-publisher duplicates like a Grassroots
+    DC listing that already exists in the DB as a Trumba-imported Free DC row.
+
+    We reuse existing_rows.json (already fetched) and translate each row to
+    `{title, startDateTime}` — the exact fields load_trumba() accepts.
     """
-    (RUN_DIR / "raw_trumba.json").write_text("[]")
+    ex_path = RUN_DIR / "existing_rows.json"
+    if not ex_path.exists():
+        (RUN_DIR / "raw_trumba.json").write_text("[]", encoding="utf-8")
+        return
+    try:
+        rows = json.loads(ex_path.read_text(encoding="utf-8"))
+    except Exception:
+        (RUN_DIR / "raw_trumba.json").write_text("[]", encoding="utf-8")
+        return
+
+    items = []
+    seen: set[tuple[str, str]] = set()
+    for r in rows:
+        if len(r) < 3:
+            continue
+        title = (r[1] or "").strip()
+        date = (r[2] or "").strip()
+        if not title or not date:
+            continue
+        # Deduplicate on (title, date) so we don't waste comparison cycles.
+        key = (title.lower(), date)
+        if key in seen:
+            continue
+        seen.add(key)
+        # runner.py's load_trumba parses startDateTime[:10] as YYYY-MM-DD.
+        try:
+            m, d, y = date.split("/")
+            iso = f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+        except Exception:
+            continue
+        items.append({"title": title, "startDateTime": iso})
+
+    (RUN_DIR / "raw_trumba.json").write_text(
+        json.dumps(items, ensure_ascii=False), encoding="utf-8"
+    )
+    print(f"[trumba-compat] {len(items)} rows for fuzzy dedup")
 
 
 def main() -> None:
@@ -197,7 +236,7 @@ def main() -> None:
     fetch_festival_center()
     print("[fetch] Dedup + Trumba compat:")
     fetch_existing_rows()
-    write_empty_trumba()
+    write_trumba_from_db()
     print("[fetch] done.")
 
 

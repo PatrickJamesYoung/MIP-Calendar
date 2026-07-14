@@ -131,6 +131,12 @@ export async function GET(req: Request) {
     ]);
   }
 
+  // Runner.py dedupes exact matches on (source, title, date) using this
+  // shape, and then does a *fuzzy* match against raw_trumba.json (populated
+  // from the same DB rows in the caller's fetch step) with a 0.72 similarity
+  // threshold and "Free DC " prefix stripping. Between the two, cross-
+  // publisher duplicates like "Freedom Dreaming Session 1" (Grassroots) vs.
+  // "Free DC Freedom Dreaming Session 1" (Trumba import) get caught.
   return Response.json(
     { rows, count: rows.length, fetched_at: nowIso },
     { status: 200 }
