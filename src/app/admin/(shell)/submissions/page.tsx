@@ -16,16 +16,22 @@ interface SubmissionRecord {
   decided_at: string | null;
   published_event_id: string | null;
   created_at: string;
+  source_type: string | null;
+  source_name: string | null;
+  source_external_id: string | null;
+  source_url: string | null;
+  auto_submit: boolean | null;
 }
 
 export default async function SubmissionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; source?: string }>;
 }) {
   await requireAdmin();
   const params = await searchParams;
   const filter = params.status === "all" ? null : (params.status ?? "pending");
+  const sourceFilter = params.source ?? null;
 
   const supabase = createAdminClient();
   const query = supabase
@@ -34,6 +40,8 @@ export default async function SubmissionsPage({
     .order("created_at", { ascending: false })
     .limit(200);
   if (filter) query.eq("status", filter);
+  if (sourceFilter === "public") query.eq("source_type", "public");
+  if (sourceFilter === "ingest") query.eq("source_type", "ingest");
   const { data } = await query;
 
   const submissions = (data ?? []) as SubmissionRecord[];
@@ -79,6 +87,14 @@ export default async function SubmissionsPage({
         <FilterTab href="/admin/submissions?status=all" label="All" count={(pendingCount ?? 0) + (approvedCount ?? 0) + (rejectedCount ?? 0)} active={filter === null} />
       </div>
 
+      {/* Source-type chips */}
+      <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
+        <span className="text-mip-gray-600">Source:</span>
+        <SourceChip href={buildHref(filter, null)} label="All" active={sourceFilter === null} />
+        <SourceChip href={buildHref(filter, "public")} label="Public form" active={sourceFilter === "public"} />
+        <SourceChip href={buildHref(filter, "ingest")} label="Auto-ingested" active={sourceFilter === "ingest"} />
+      </div>
+
       {/* List */}
       {submissions.length === 0 ? (
         <div className="mt-8 p-8 border border-dashed border-mip-gray-300 text-center">
@@ -110,6 +126,29 @@ export default async function SubmissionsPage({
         </div>
       )}
     </div>
+  );
+}
+
+function buildHref(status: string | null, source: string | null): string {
+  const p = new URLSearchParams();
+  if (status && status !== "pending") p.set("status", status);
+  if (status === null) p.set("status", "all");
+  if (source) p.set("source", source);
+  const q = p.toString();
+  return q ? `/admin/submissions?${q}` : "/admin/submissions";
+}
+
+function SourceChip({ href, label, active }: { href: string; label: string; active: boolean }) {
+  return (
+    <Link
+      href={href}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 transition-colors ${
+        active ? "bg-mip-purple text-mip-white" : "bg-mip-gray-100 text-mip-gray-700 hover:bg-mip-gray-200"
+      }`}
+      style={{ borderRadius: "6px" }}
+    >
+      {label}
+    </Link>
   );
 }
 

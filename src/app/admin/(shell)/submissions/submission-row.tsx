@@ -29,6 +29,11 @@ interface Submission {
   decided_at: string | null;
   published_event_id: string | null;
   created_at: string;
+  source_type?: string | null;
+  source_name?: string | null;
+  source_external_id?: string | null;
+  source_url?: string | null;
+  auto_submit?: boolean | null;
 }
 
 interface Props {
@@ -93,10 +98,25 @@ export function SubmissionRow({ submission, overlayName, eventTypeName }: Props)
               {p.title || "(untitled)"}
             </h3>
             <StatusBadge status={submission.status} />
+            {submission.source_type === "ingest" && submission.source_name && (
+              <span
+                className="inline-flex items-center gap-1 text-xs px-2 py-0.5"
+                style={{
+                  backgroundColor: submission.auto_submit ? "var(--color-mip-yellow)" : "#e5e7eb",
+                  color: submission.auto_submit ? "var(--color-mip-purple)" : "#374151",
+                  borderRadius: "6px",
+                }}
+                title={submission.auto_submit ? "Curated source, safe to approve" : "Needs review"}
+              >
+                {submission.auto_submit ? "⭐" : "🔍"} {submission.source_name}
+              </span>
+            )}
           </div>
           <p className="text-xs text-mip-gray-500 mt-1">
-            Submitted by <strong>{submission.submitter_name}</strong> ·{" "}
-            {new Date(submission.created_at).toLocaleString()}
+            {submission.source_type === "ingest"
+              ? <>Auto-ingested · {new Date(submission.created_at).toLocaleString()}</>
+              : <>Submitted by <strong>{submission.submitter_name}</strong> · {new Date(submission.created_at).toLocaleString()}</>
+            }
           </p>
         </div>
 

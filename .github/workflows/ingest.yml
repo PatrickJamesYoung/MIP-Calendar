@@ -1,0 +1,74 @@
+name: Bi-weekly DC events ingest
+
+on:
+  # Sunday + Thursday around 20:00 America/New_York, matching the old
+  # Google Sheets cadence. We run once a day at 00:30 UTC on Mon/Fri — that's
+  # 19:30 ET during EST (Nov–Mar) or 20:30 ET during EDT (Mar–Nov). The ~30-min
+  # DST drift is fine for a bi-weekly cron. Single cron avoids the classic
+  # "two-cron DST" pitfall where both fire during EDT.
+  schedule:
+    - cron: '30 0 * * 1,5'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Skip POST to /api/ingest/submissions'
+        type: boolean
+        default: false
+
+concurrency:
+  group: dc-events-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Prepare RUN_DIR
+        id: prep
+        run: |
+          RUN_DIR="${GITHUB_WORKSPACE}/run_$(date -u +%Y%m%dT%H%M%SZ)"
+          mkdir -p "$RUN_DIR"
+          echo "RUN_DIR=$RUN_DIR" >> "$GITHUB_ENV"
+          echo "run_dir=$RUN_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch raw sources + dedup state
+        env:
+          RUN_DIR: ${{ env.RUN_DIR }}
+          INGEST_API_BASE: ${{ secrets.INGEST_API_BASE }}
+          INGEST_BEARER_TOKEN: ${{ secrets.INGEST_BEARER_TOKEN }}
+        run: python ingest/fetch_sources.py
+
+      - name: Run classifier (runner.py)
+        env:
+          RUN_DIR: ${{ env.RUN_DIR }}
+        run: python ingest/vendor/runner.py
+
+      - name: LLM classify (PopVille + Busboys)
+        env:
+          RUN_DIR: ${{ env.RUN_DIR }}
+          PPLX_API_KEY: ${{ secrets.PPLX_API_KEY }}
+        run: python ingest/classify_llm.py
+
+      - name: POST → /api/ingest/submissions
+        if: ${{ inputs.dry_run != true }}
+        env:
+          RUN_DIR: ${{ env.RUN_DIR }}
+          INGEST_API_BASE: ${{ secrets.INGEST_API_BASE }}
+          INGEST_BEARER_TOKEN: ${{ secrets.INGEST_BEARER_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
+        run: python ingest/post_submissions.py
+
+      - name: Upload run artifacts (raw + parsed)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ingest-run-${{ github.run_id }}
+          path: ${{ env.RUN_DIR }}
+          retention-days: 14

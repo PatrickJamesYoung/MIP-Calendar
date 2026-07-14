@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href: "/admin/overlays", label: "Calendars" },
   { href: "/admin/admins", label: "Admins", superOnly: true },
   { href: "/admin/import", label: "Import", superOnly: true },
+  { href: "/admin/ingestion", label: "Ingestion", superOnly: true },
   { href: "/admin/audit", label: "Audit" },
 ];
 
