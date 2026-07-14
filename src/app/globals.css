@@ -121,6 +121,40 @@ body {
   border-radius: 2px;
 }
 
+/* Form input styling */
+.mip-input {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--color-mip-gray-900);
+  background: var(--color-mip-white);
+  border: 1px solid var(--color-mip-gray-300);
+  border-radius: var(--radius-button);
+  transition: border-color 150ms ease;
+}
+.mip-input:hover {
+  border-color: var(--color-mip-gray-500);
+}
+.mip-input:focus {
+  outline: none;
+  border-color: var(--color-mip-purple);
+  box-shadow: 0 0 0 3px rgba(57, 55, 91, 0.1);
+}
+.mip-input-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-mip-gray-700);
+}
+textarea.mip-input {
+  resize: vertical;
+  min-height: 100px;
+  font-family: inherit;
+}
+
 /* Scrollbar styling for horizontal featured bar */
 .mip-scroll-x {
   scrollbar-width: thin;
