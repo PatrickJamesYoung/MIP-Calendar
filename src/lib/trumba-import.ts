@@ -170,11 +170,21 @@ function parseIcsDate(
     return { iso: `${y}-${m}-${d}T${hh}:${mm}:${ss}Z`, allDay: false };
   }
 
-  // Zoned time — convert to UTC using the offset for that instant in the tz.
+  // Zoned time — the timestamp value is wall-clock time in `tz`. To get UTC
+  // we ask 'what UTC instant, when displayed in tz, shows these wall-clock
+  // digits?' — that instant is our target.
+  //
+  // Approach: pretend the wall-clock reading IS UTC (naiveLocal), then look
+  // up what wall-clock those same milliseconds render as in tz. The delta is
+  // the tz offset relative to UTC. To recover the true UTC instant, subtract
+  // that delta from naiveLocal.
+  //
+  // Prior bug: we ADDED the delta instead of subtracting it, so every event
+  // ended up shifted by 2 * the tz offset (8 h during EDT, 10 h during EST).
   const tz = params.TZID;
   const naiveLocal = new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}Z`);
   const offsetMinutes = getTimezoneOffsetMinutes(naiveLocal, tz);
-  const utcMs = naiveLocal.getTime() + offsetMinutes * 60_000;
+  const utcMs = naiveLocal.getTime() - offsetMinutes * 60_000;
   return { iso: new Date(utcMs).toISOString(), allDay: false };
 }
 
