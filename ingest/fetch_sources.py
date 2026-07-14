@@ -31,6 +31,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+import requests
+
 RUN_DIR = Path(os.environ["RUN_DIR"])
 INGEST_API_BASE = os.environ.get("INGEST_API_BASE", "").rstrip("/")
 INGEST_BEARER_TOKEN = os.environ.get("INGEST_BEARER_TOKEN", "")
@@ -58,11 +60,11 @@ def _fetch(url: str, dest: Path, kind: str = "text", extra_headers: dict[str, st
             content = resp.read()
     except urllib.error.HTTPError as e:
         print(f"  [{dest.name}] HTTP {e.code} — writing empty {kind}", file=sys.stderr)
-        dest.write_text("{}" if kind == "json" else "" if kind == "html" else "" if kind == "ics" else "{}")
+        dest.write_text("{}" if kind == "json" else "", encoding="utf-8")
         return
     except Exception as e:
         print(f"  [{dest.name}] fetch failed: {e} — writing empty {kind}", file=sys.stderr)
-        dest.write_text("{}" if kind == "json" else "" if kind == "html" else "" if kind == "ics" else "{}")
+        dest.write_text("{}" if kind == "json" else "", encoding="utf-8")
         return
 
     if kind == "json":
@@ -71,7 +73,7 @@ def _fetch(url: str, dest: Path, kind: str = "text", extra_headers: dict[str, st
             json.loads(content.decode("utf-8"))
         except Exception as e:
             print(f"  [{dest.name}] invalid JSON: {e} — writing empty", file=sys.stderr)
-            dest.write_text("{}")
+            dest.write_text("{}", encoding="utf-8")
             return
     dest.write_bytes(content)
     print(f"  [{dest.name}] {len(content)} bytes ok")
@@ -146,24 +148,32 @@ def fetch_existing_rows() -> None:
     """
     if not INGEST_API_BASE or not INGEST_BEARER_TOKEN:
         print("[dedup] INGEST_API_BASE / INGEST_BEARER_TOKEN not set — using empty existing_rows", file=sys.stderr)
-        (RUN_DIR / "existing_rows.json").write_text("[]")
+        (RUN_DIR / "existing_rows.json").write_text("[]", encoding="utf-8")
         return
 
     url = f"{INGEST_API_BASE}/api/ingest/dedup-state"
-    req = urllib.request.Request(url, headers={
-        "User-Agent": UA,
-        "Authorization": f"Bearer {INGEST_BEARER_TOKEN}",
-    })
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
+        resp = requests.get(
+            url,
+            headers={
+                "User-Agent": UA,
+                "Authorization": f"Bearer {INGEST_BEARER_TOKEN}",
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        body = resp.json()
     except Exception as e:
         print(f"[dedup] fetch failed: {e} — using empty existing_rows", file=sys.stderr)
-        (RUN_DIR / "existing_rows.json").write_text("[]")
+        (RUN_DIR / "existing_rows.json").write_text("[]", encoding="utf-8")
         return
 
     rows = body.get("rows", [])
-    (RUN_DIR / "existing_rows.json").write_text(json.dumps(rows))
+    # Force UTF-8 + ensure_ascii=False so unicode characters (e.g. \u2009
+    # narrow-space in event titles) round-trip cleanly for runner.py.
+    (RUN_DIR / "existing_rows.json").write_text(
+        json.dumps(rows, ensure_ascii=False), encoding="utf-8"
+    )
     print(f"[dedup] {len(rows)} existing rows loaded")
 
 
