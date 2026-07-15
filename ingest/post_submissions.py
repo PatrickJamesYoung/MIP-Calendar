@@ -53,8 +53,14 @@ def main() -> None:
         body = json.loads(resp.read().decode("utf-8"))
 
     print(f"[post] response: {json.dumps(body, indent=2)}")
-    if body.get("inserted", 0) == 0 and body.get("skipped", 0) == 0 and submit_count > 0:
-        # Something went wrong upstream.
+    # Sanity: if we sent Submit-marked events but nothing was inserted or
+    # skipped-as-duplicate, something went wrong upstream.
+    if (
+        body.get("submitted_count", 0) == 0
+        and body.get("skipped_count", 0) == 0
+        and submit_count > 0
+    ):
+        print(f"[post] sanity check failed — no events processed", file=sys.stderr)
         sys.exit(1)
 
 
