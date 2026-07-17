@@ -112,7 +112,7 @@ export function CalendarShell({ events, overlays }: CalendarShellProps) {
       <FeaturedBar events={featuredEvents} />
 
       <main
-        className="flex-1 mx-auto w-full px-6 py-6"
+        className="calendar-scaled flex-1 mx-auto w-full px-6 py-6"
         style={{ maxWidth: "var(--max-width-content)" }}
       >
         <div className="grid md:grid-cols-[240px_1fr] gap-6">

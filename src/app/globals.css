@@ -264,3 +264,28 @@ textarea.mip-input {
 /* Consecutive <br><br> from Trumba should feel like a paragraph break,
    not a huge gap. */
 .event-description br + br { display: block; content: ""; margin-top: 0.5em; }
+
+/* ============================================
+   CALENDAR TYPOGRAPHY SCALE
+   ============================================
+   Bumps text sizes ~50% inside the calendar shell without inflating
+   Tailwind spacing utilities (p-*, gap-*, mb-*, etc.). Tailwind text-*
+   classes are defined in rem, so overriding them directly under
+   .calendar-scaled leaves spacing untouched and only affects
+   typography.
+
+   Scoped to the calendar <main> only — does NOT affect site header,
+   footer, admin, submit form, or the featured bar (which sits above
+   .calendar-scaled). */
+.calendar-scaled .text-xs   { font-size: 1.125rem; line-height: 1.5rem; }   /* 12 → 18 */
+.calendar-scaled .text-sm   { font-size: 1.3125rem; line-height: 1.75rem; } /* 14 → 21 */
+.calendar-scaled .text-base { font-size: 1.5rem; line-height: 2rem; }       /* 16 → 24 */
+.calendar-scaled .text-lg   { font-size: 1.6875rem; line-height: 2.25rem; } /* 18 → 27 */
+.calendar-scaled .text-xl   { font-size: 1.875rem; line-height: 2.25rem; }  /* 20 → 30 */
+.calendar-scaled .text-2xl  { font-size: 2.25rem; line-height: 2.5rem; }    /* 24 → 36 */
+.calendar-scaled .text-3xl  { font-size: 2.8125rem; line-height: 1; }       /* 30 → 45 */
+.calendar-scaled .text-4xl  { font-size: 3.375rem; line-height: 1; }        /* 36 → 54 */
+
+/* Also bump inline-styled utility classes that appear inside the shell. */
+.calendar-scaled .mip-nav-text      { font-size: 1.35rem; }       /* 0.9 → 1.35 */
+.calendar-scaled .mip-priority-badge { font-size: 1.05rem; padding: 4px 10px; } /* 0.7 → 1.05 */
