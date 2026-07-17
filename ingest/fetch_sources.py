@@ -114,11 +114,21 @@ def fetch_grassroots() -> None:
 def fetch_mobilize() -> None:
     # Mobilize org allowlist. Keep in sync with the `orgs` dict in
     # ingest/vendor/runner.py::parse_mobilize().
+    #
+    # For large national orgs, first-page-only fetch would miss DC events
+    # buried deep in the ordering. Adding zipcode=20005 (~50mi radius from DC)
+    # scopes the API to DC-area events server-side. Small/DC-native orgs
+    # don't get this filter because their location metadata is sparse and
+    # zipcode filtering drops most of their events (e.g. DC WFP virtual
+    # events return 0 under zipcode filter).
+    NATIONAL_ORGS = {93, 7229, 1377}  # Indivisible, John Lewis Actions, Color Of Change
     orgs = [1723, 32348, 2339, 1377, 34282, 93, 7229]
     for oid in orgs:
+        query = "?timeslot_start=gte_now&per_page=50"
+        if oid in NATIONAL_ORGS:
+            query += "&zipcode=20005"
         _fetch(
-            f"https://api.mobilize.us/v1/organizations/{oid}/events"
-            f"?timeslot_start=gte_now&per_page=50",
+            f"https://api.mobilize.us/v1/organizations/{oid}/events{query}",
             RUN_DIR / f"raw_mobilize_{oid}.json",
             kind="json",
         )
