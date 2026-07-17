@@ -112,7 +112,9 @@ def fetch_grassroots() -> None:
 
 
 def fetch_mobilize() -> None:
-    orgs = [1723, 32348, 2339, 1377, 34282, 93]
+    # Mobilize org allowlist. Keep in sync with the `orgs` dict in
+    # ingest/vendor/runner.py::parse_mobilize().
+    orgs = [1723, 32348, 2339, 1377, 34282, 93, 7229]
     for oid in orgs:
         _fetch(
             f"https://api.mobilize.us/v1/organizations/{oid}/events"

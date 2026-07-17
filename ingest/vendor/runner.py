@@ -304,6 +304,9 @@ def parse_grassroots():
 
 def parse_mobilize():
     events = []
+    # Mobilize org allowlist. This is the ONLY sanctioned edit to runner.py:
+    # add or remove org IDs here as the watchlist grows. Do not modify any
+    # other logic in this file (see handoff packet lessons.md).
     orgs = {
         1723: 'DC Working Families Party',
         32348: 'One Fair Wage',
@@ -311,6 +314,7 @@ def parse_mobilize():
         1377: 'Color Of Change',
         34282: "Harriet's Wildest Dreams",
         93: 'Indivisible',
+        7229: 'John Lewis Actions',
     }
     VIRTUAL = {'PHONE_BANK', 'TEXT_BANK', 'VIRTUAL_PHONE_BANK', 'VIRTUAL_TEXT_BANK'}
     for oid, oname in orgs.items():
