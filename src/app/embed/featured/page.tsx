@@ -163,12 +163,12 @@ function ListCard({ event }: { event: CalendarEvent }) {
         >
           {badge.weekday}, {badge.month} {badge.day} · {time}
         </p>
-        {event.location_name && (
+        {event.location_text && (
           <p
             className="text-xs truncate"
             style={{ color: "var(--color-mip-gray-500)" }}
           >
-            {event.location_name}
+            {event.location_text}
           </p>
         )}
       </div>

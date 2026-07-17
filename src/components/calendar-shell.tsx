@@ -115,19 +115,6 @@ export function CalendarShell({ events, overlays }: CalendarShellProps) {
         className="flex-1 mx-auto w-full px-6 py-6"
         style={{ maxWidth: "var(--max-width-content)" }}
       >
-        <div className="mb-5">
-          <h1
-            className="mip-heading text-3xl md:text-4xl mip-double-underline inline-block pb-1.5"
-            style={{ color: "var(--color-mip-purple)" }}
-          >
-            Movement Calendar
-          </h1>
-          <p className="mt-3 text-sm text-mip-gray-700 max-w-3xl">
-            A resource for our community — find ways to plug into actions and events,
-            promote your action, and track important dates in our political and economic landscape.
-          </p>
-        </div>
-
         <div className="grid md:grid-cols-[240px_1fr] gap-6">
           <aside className="hidden md:block">
             <div className="sticky top-20 space-y-6">
