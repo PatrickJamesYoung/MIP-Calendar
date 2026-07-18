@@ -86,15 +86,15 @@ function FeaturedCard({ event }: { event: CalendarEvent }) {
     >
       {/* Poster area with date badge overlay */}
       <div
-        className="relative overflow-hidden"
-        style={{ aspectRatio: "4 / 5" }}
+        className="relative overflow-hidden bg-mip-gray-100"
+        style={{ aspectRatio: "3 / 4" }}
       >
         {event.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={event.image_url}
             alt={event.title}
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
             loading="lazy"
           />
         ) : (
