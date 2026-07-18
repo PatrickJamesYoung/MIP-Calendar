@@ -147,18 +147,10 @@ export function EventCard({ event, layout = "feed" }: EventCardProps) {
             className="shrink-0 hidden md:flex items-center justify-center w-32 h-32"
             style={{
               backgroundColor: "var(--color-mip-gray-50)",
-              border: "1px dashed var(--color-mip-gray-200)",
               borderRadius: "8px",
             }}
             aria-hidden
-          >
-            <span
-              className="mip-display text-3xl"
-              style={{ color: "var(--color-mip-purple)", opacity: 0.35 }}
-            >
-              MIP
-            </span>
-          </div>
+          />
         )}
       </div>
     </Link>
