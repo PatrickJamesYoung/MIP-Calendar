@@ -1,7 +1,4 @@
-"use client";
-
 import Link from "next/link";
-import { Star } from "lucide-react";
 import type { CalendarEvent } from "@/lib/types";
 import { formatDateBadge, formatTimeRange } from "@/lib/utils";
 
@@ -10,37 +7,57 @@ interface FeaturedBarProps {
 }
 
 /**
- * Horizontal-scrolling bar of MIP-priority events.
- * Auto-hides if there are no featured events currently active.
+ * "Featured Actions" section — Playfair display header + poster-style card
+ * grid. Inspired by Free DC's featured actions treatment, in MIP palette
+ * (purple/yellow) with Playfair Display headline typography.
+ *
+ * Auto-hides when there are no active featured events.
+ * Shows up to 6 events. Grid: 3-across on desktop, 2 on tablet, 1 on mobile.
  */
 export function FeaturedBar({ events }: FeaturedBarProps) {
   if (events.length === 0) return null;
 
+  const featured = events.slice(0, 6);
+
   return (
     <section
-      aria-label="Priority events"
-      className="w-full border-b border-mip-gray-200"
-      style={{ backgroundColor: "var(--color-mip-yellow)" }}
+      aria-label="Featured actions"
+      className="w-full"
+      style={{ backgroundColor: "var(--color-mip-white)" }}
     >
       <div
-        className="mx-auto px-6 py-3"
+        className="mx-auto px-6 pt-10 pb-8 md:pt-14 md:pb-10"
         style={{ maxWidth: "var(--max-width-content)" }}
       >
-        <div className="flex items-center gap-2 mb-2">
-          <Star
-            className="w-4 h-4 fill-mip-purple"
-            style={{ color: "var(--color-mip-purple)" }}
-          />
-          <h2
-            className="mip-nav-text"
+        <div className="text-center mb-8 md:mb-10">
+          <div className="mip-eyebrow mb-3">Movement Infrastructure Project</div>
+          <h1
+            className="mip-display text-4xl md:text-6xl"
             style={{ color: "var(--color-mip-purple)" }}
           >
-            MIP Priority Events
-          </h2>
+            Upcoming Events
+          </h1>
+          <div
+            className="mt-4 inline-block px-4 py-1"
+            style={{
+              backgroundColor: "var(--color-mip-yellow)",
+              borderRadius: "9999px",
+            }}
+          >
+            <span
+              className="mip-eyebrow"
+              style={{
+                color: "var(--color-mip-purple)",
+                letterSpacing: "0.18em",
+              }}
+            >
+              Featured Actions
+            </span>
+          </div>
         </div>
 
-        <div className="flex gap-2 overflow-x-auto mip-scroll-x pb-1.5 -mx-1 px-1 snap-x snap-mandatory">
-          {events.map((event) => (
+        <div className="grid gap-5 md:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+          {featured.map((event) => (
             <FeaturedCard key={event.id} event={event} />
           ))}
         </div>
@@ -57,56 +74,92 @@ function FeaturedCard({ event }: { event: CalendarEvent }) {
     event.all_day,
     event.timezone
   );
-  const overlay = event.overlay_calendar;
 
   return (
     <Link
       href={`/e/${event.slug}`}
-      className="snap-start shrink-0 w-72 bg-mip-white border border-mip-gray-200 hover:border-mip-purple transition-colors p-2.5 flex gap-2"
-      style={{ borderRadius: "var(--radius-button)" }}
+      className="group block bg-mip-white overflow-hidden transition-all duration-200"
+      style={{
+        border: "1px solid var(--color-mip-gray-200)",
+        borderRadius: "12px",
+      }}
     >
-      {event.image_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={event.image_url}
-          alt=""
-          className="shrink-0 w-14 h-14 object-cover"
-          style={{ borderRadius: "var(--radius-button)" }}
-          loading="lazy"
-        />
-      ) : (
+      {/* Poster area with date badge overlay */}
+      <div
+        className="relative overflow-hidden"
+        style={{ aspectRatio: "4 / 5" }}
+      >
+        {event.image_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={event.image_url}
+            alt={event.title}
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            loading="lazy"
+          />
+        ) : (
+          <div
+            className="w-full h-full flex items-center justify-center"
+            style={{ backgroundColor: "var(--color-mip-purple)" }}
+          >
+            <div className="text-center px-4">
+              <div
+                className="mip-display text-3xl mb-1"
+                style={{ color: "var(--color-mip-yellow)" }}
+              >
+                {event.title}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Date badge in top-right corner (Free DC signature) */}
         <div
-          className="flex flex-col items-center justify-center shrink-0 w-14 h-14 text-center"
+          className="absolute top-3 right-3 flex flex-col items-center justify-center text-center px-2.5 py-1.5"
           style={{
-            backgroundColor: "var(--color-mip-purple)",
-            color: "var(--color-mip-white)",
-            borderRadius: "var(--radius-button)",
+            backgroundColor: "var(--color-mip-white)",
+            borderRadius: "8px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            minWidth: "58px",
           }}
         >
-          <div className="text-[10px] font-bold leading-none">{badge.month}</div>
-          <div className="text-lg font-bold leading-tight">{badge.day}</div>
-          <div className="text-[9px] leading-none opacity-80">{badge.weekday}</div>
-        </div>
-      )}
-      <div className="flex-1 min-w-0">
-        {overlay && (
-          <span
-            className="text-[9px] uppercase tracking-wide font-bold inline-flex items-center gap-1 mb-0.5"
-            style={{ color: overlay.color }}
+          <div
+            className="text-[10px] font-bold uppercase tracking-widest"
+            style={{ color: "var(--color-mip-purple)" }}
           >
-            <span
-              className="w-1.5 h-1.5 rounded-full inline-block"
-              style={{ backgroundColor: overlay.color }}
-            />
-            {overlay.name}
-          </span>
-        )}
-        <h3 className="mip-heading text-sm leading-tight line-clamp-2">
+            {badge.month}
+          </div>
+          <div
+            className="mip-display text-2xl leading-none"
+            style={{ color: "var(--color-mip-purple)" }}
+          >
+            {badge.day}
+          </div>
+        </div>
+      </div>
+
+      {/* Card body */}
+      <div className="p-4 md:p-5">
+        <h3
+          className="mip-heading text-lg md:text-xl leading-tight line-clamp-2 mb-2"
+          style={{ color: "var(--color-mip-black)" }}
+        >
           {event.title}
         </h3>
-        <p className="text-[11px] text-mip-gray-700 mt-0.5 line-clamp-1">
-          {badge.month} {badge.day} · {time}
+        <p
+          className="text-sm font-medium"
+          style={{ color: "var(--color-mip-purple)" }}
+        >
+          {badge.weekday}, {badge.month} {badge.day} · {time}
         </p>
+        {event.location_text && (
+          <p
+            className="text-sm mt-1 line-clamp-1"
+            style={{ color: "var(--color-mip-gray-500)" }}
+          >
+            {event.location_text}
+          </p>
+        )}
       </div>
     </Link>
   );

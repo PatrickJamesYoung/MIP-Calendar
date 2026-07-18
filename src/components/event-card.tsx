@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { MapPin, Globe, Users, Star } from "lucide-react";
 import type { CalendarEvent } from "@/lib/types";
-import { formatDateBadge, formatTimeRange } from "@/lib/utils";
+import { formatTimeRange } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 interface EventCardProps {
@@ -12,12 +12,11 @@ interface EventCardProps {
 }
 
 /**
- * Primary event card used in the Feed view.
- * Denser layout with side-thumbnail image (when available) rather than
- * a big hero above — keeps the feed scannable at high density.
+ * Luma-inspired event row for the Feed view. The day is rendered by
+ * FeedView's group header, so this card focuses on: time · title · host ·
+ * location, with a small square thumbnail on the right.
  */
 export function EventCard({ event, layout = "feed" }: EventCardProps) {
-  const badge = formatDateBadge(event.starts_at, event.timezone);
   const time = formatTimeRange(
     event.starts_at,
     event.ends_at,
@@ -26,7 +25,6 @@ export function EventCard({ event, layout = "feed" }: EventCardProps) {
   );
 
   const overlay = event.overlay_calendar;
-  const borderColor = overlay?.color ?? "#39375b";
   const locationIcon =
     event.location_type === "online" ? (
       <Globe className="w-3 h-3" />
@@ -40,146 +38,129 @@ export function EventCard({ event, layout = "feed" }: EventCardProps) {
     <Link
       href={`/e/${event.slug}`}
       className={cn(
-        "mip-card block overflow-hidden",
+        "group block bg-mip-white overflow-hidden transition-all duration-200",
         layout === "feed" ? "" : "text-sm"
       )}
       style={{
-        borderLeftColor: borderColor,
-        borderLeftWidth: "4px",
+        border: "1px solid var(--color-mip-gray-200)",
+        borderRadius: "12px",
       }}
     >
-      <div className="flex items-start gap-3 p-2.5">
-        {/* Date badge */}
-        <div
-          className="flex flex-col items-center justify-center shrink-0 w-12 h-12 text-center"
-          style={{
-            backgroundColor: "var(--color-mip-purple)",
-            color: "var(--color-mip-white)",
-            borderRadius: "var(--radius-button)",
-          }}
-        >
-          <div className="text-[9px] font-bold leading-none uppercase">
-            {badge.month}
-          </div>
-          <div className="text-lg font-bold leading-tight">{badge.day}</div>
-          <div className="text-[8px] leading-none opacity-80 uppercase">
-            {badge.weekday}
-          </div>
-        </div>
-
+      <div className="flex items-stretch gap-4 p-3 md:p-4">
         {/* Content */}
-        <div className="flex-1 min-w-0">
-          {/* Chip row: priority + overlay + event type */}
-          <div className="flex items-center flex-wrap gap-1 mb-1">
-            {event.is_featured && (
-              <span className="mip-priority-badge shrink-0 inline-flex items-center gap-0.5">
-                <Star className="w-2.5 h-2.5 fill-current" />
-                Priority
-              </span>
-            )}
-            {overlay && (
-              <span
-                className="text-[9px] uppercase tracking-wide font-bold px-1.5 py-0.5 shrink-0 inline-flex items-center gap-1"
-                style={{
-                  backgroundColor: `${overlay.color}20`,
-                  color: overlay.color,
-                  borderRadius: "3px",
-                }}
+        <div className="flex-1 min-w-0 flex flex-col justify-between">
+          <div>
+            {/* Time */}
+            <div
+              className="text-sm font-semibold mb-1"
+              style={{ color: "var(--color-mip-gray-700)" }}
+            >
+              {time}
+            </div>
+
+            {/* Title */}
+            <h3
+              className="text-base md:text-lg font-bold leading-snug line-clamp-2 mb-1"
+              style={{
+                color: "var(--color-mip-black)",
+                fontFamily: "var(--font-sans)",
+              }}
+            >
+              {event.title}
+            </h3>
+
+            {/* Host */}
+            {event.host_org && (
+              <p
+                className="text-sm line-clamp-1"
+                style={{ color: "var(--color-mip-gray-500)" }}
               >
-                <span
-                  className="w-1.5 h-1.5 rounded-full inline-block"
-                  style={{ backgroundColor: overlay.color }}
-                />
-                {overlay.name}
-              </span>
-            )}
-            {event.event_type && (
-              <span
-                className="text-[9px] uppercase tracking-wide font-semibold px-1.5 py-0.5 shrink-0"
-                style={{
-                  backgroundColor: "var(--color-mip-gray-100)",
-                  color: "var(--color-mip-gray-700)",
-                  borderRadius: "3px",
-                }}
-              >
-                {event.event_type.name}
-              </span>
+                {event.host_org}
+              </p>
             )}
           </div>
 
-          <h3 className="mip-heading text-base leading-tight mb-0.5 line-clamp-2">
-            {event.title}
-          </h3>
-
-          {event.host_org && (
-            <p className="text-xs text-mip-gray-700 line-clamp-1">
-              {event.host_org}
-            </p>
-          )}
-
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-mip-gray-500 mt-0.5">
-            <span>{time}</span>
+          {/* Bottom meta row */}
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
             {event.location_text && (
-              <span className="inline-flex items-center gap-1 min-w-0">
+              <span
+                className="inline-flex items-center gap-1 text-xs min-w-0"
+                style={{ color: "var(--color-mip-gray-500)" }}
+              >
                 {locationIcon}
                 <span className="line-clamp-1">{event.location_text}</span>
               </span>
             )}
-          </div>
 
-          {event.accessibility && event.accessibility.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1">
-              {event.accessibility.slice(0, 5).map((feature) => (
-                <span
-                  key={feature}
-                  className="text-[8px] uppercase tracking-wide font-semibold px-1 py-0.5"
-                  style={{
-                    backgroundColor: "var(--color-mip-cyan)",
-                    color: "var(--color-mip-purple)",
-                    borderRadius: "2px",
-                  }}
-                  title={feature.replace(/_/g, " ")}
-                >
-                  {feature.replace(/_/g, " ")}
+            {/* Chips */}
+            <div className="flex items-center flex-wrap gap-1.5">
+              {event.is_featured && (
+                <span className="mip-priority-badge inline-flex items-center gap-0.5">
+                  <Star className="w-2.5 h-2.5 fill-current" />
+                  Priority
                 </span>
-              ))}
+              )}
+              {overlay && (
+                <span
+                  className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 inline-flex items-center gap-1"
+                  style={{
+                    backgroundColor: `${overlay.color}18`,
+                    color: overlay.color,
+                    borderRadius: "999px",
+                  }}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full inline-block"
+                    style={{ backgroundColor: overlay.color }}
+                  />
+                  {overlay.name}
+                </span>
+              )}
+              {event.event_type && (
+                <span
+                  className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5"
+                  style={{
+                    backgroundColor: "var(--color-mip-gray-100)",
+                    color: "var(--color-mip-gray-700)",
+                    borderRadius: "999px",
+                  }}
+                >
+                  {event.event_type.name}
+                </span>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Right-side thumbnail (event graphic) */}
-        {event.image_url && (
-          <div
-            className="shrink-0 hidden sm:block relative overflow-hidden"
-            style={{
-              width: "112px",
-              height: "112px",
-              borderRadius: "var(--radius-button)",
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={event.image_url}
-              alt=""
-              className="w-full h-full object-cover"
-              loading="lazy"
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Mobile: image goes full-width at the bottom to preserve density */}
-      {event.image_url && (
-        <div className="sm:hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+        {/* Right-side square thumbnail */}
+        {event.image_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={event.image_url}
             alt=""
-            className="w-full aspect-[16/9] object-cover"
+            className="shrink-0 object-cover w-24 h-24 md:w-32 md:h-32 group-hover:opacity-95 transition-opacity"
+            style={{ borderRadius: "8px" }}
             loading="lazy"
           />
-        </div>
-      )}
+        ) : (
+          <div
+            className="shrink-0 hidden md:flex items-center justify-center w-32 h-32"
+            style={{
+              backgroundColor: "var(--color-mip-gray-50)",
+              border: "1px dashed var(--color-mip-gray-200)",
+              borderRadius: "8px",
+            }}
+            aria-hidden
+          >
+            <span
+              className="mip-display text-3xl"
+              style={{ color: "var(--color-mip-purple)", opacity: 0.35 }}
+            >
+              MIP
+            </span>
+          </div>
+        )}
+      </div>
     </Link>
   );
 }

@@ -31,7 +31,8 @@
   --color-overlay-sports: #3b82f6;
 
   /* Typography */
-  --font-sans: "Work Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-montserrat), "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-playfair), "Playfair Display", Georgia, "Times New Roman", serif;
 
   /* Layout tokens */
   --max-width-content: 1400px;
@@ -59,10 +60,28 @@ body {
    ============================================ */
 
 .mip-heading {
-  font-family: var(--font-sans);
+  font-family: var(--font-display);
   font-weight: 700;
-  line-height: 1.2em;
-  letter-spacing: 0.01em;
+  line-height: 1.05em;
+  letter-spacing: -0.005em;
+}
+
+/* Display-serif class for hero headers (Playfair Display). */
+.mip-display {
+  font-family: var(--font-display);
+  font-weight: 800;
+  line-height: 1.02em;
+  letter-spacing: -0.015em;
+}
+
+/* Uppercase eyebrow label (Montserrat semibold, tracked). */
+.mip-eyebrow {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.75rem;
+  color: var(--color-mip-purple);
 }
 
 .mip-nav-text {
@@ -289,3 +308,4 @@ textarea.mip-input {
 /* Also bump inline-styled utility classes that appear inside the shell. */
 .calendar-scaled .mip-nav-text      { font-size: 1.35rem; }       /* 0.9 → 1.35 */
 .calendar-scaled .mip-priority-badge { font-size: 1.05rem; padding: 4px 10px; } /* 0.7 → 1.05 */
+.calendar-scaled .mip-eyebrow       { font-size: 1.05rem; }       /* 0.75 → 1.05 */
