@@ -56,7 +56,7 @@ export function FeaturedBar({ events }: FeaturedBarProps) {
           </div>
         </div>
 
-        <div className="grid gap-5 md:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-5 md:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 items-start">
           {featured.map((event) => (
             <FeaturedCard key={event.id} event={event} />
           ))}
@@ -84,31 +84,27 @@ function FeaturedCard({ event }: { event: CalendarEvent }) {
         borderRadius: "12px",
       }}
     >
-      {/* Poster area with date badge overlay */}
-      <div
-        className="relative overflow-hidden bg-mip-gray-100"
-        style={{ aspectRatio: "3 / 4" }}
-      >
+      {/* Poster area with date badge overlay.
+         Height follows the image's natural aspect ratio (no fixed box). */}
+      <div className="relative overflow-hidden bg-mip-gray-100">
         {event.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={event.image_url}
             alt={event.title}
-            className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
+            className="block w-full h-auto transition-transform duration-500 group-hover:scale-105"
             loading="lazy"
           />
         ) : (
           <div
-            className="w-full h-full flex items-center justify-center"
-            style={{ backgroundColor: "var(--color-mip-purple)" }}
+            className="w-full flex items-center justify-center px-6 py-10"
+            style={{ backgroundColor: "var(--color-mip-purple)", minHeight: "200px" }}
           >
-            <div className="text-center px-4">
-              <div
-                className="mip-display text-3xl mb-1"
-                style={{ color: "var(--color-mip-yellow)" }}
-              >
-                {event.title}
-              </div>
+            <div
+              className="mip-display text-2xl text-center"
+              style={{ color: "var(--color-mip-yellow)" }}
+            >
+              {event.title}
             </div>
           </div>
         )}

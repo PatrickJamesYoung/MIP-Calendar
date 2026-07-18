@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Montserrat, Playfair_Display } from "next/font/google";
+import { Montserrat, Work_Sans } from "next/font/google";
 import "./globals.css";
 
 const montserrat = Montserrat({
@@ -9,10 +9,10 @@ const montserrat = Montserrat({
   display: "swap",
 });
 
-const playfair = Playfair_Display({
+const workSans = Work_Sans({
   subsets: ["latin"],
-  weight: ["600", "700", "800", "900"],
-  variable: "--font-playfair",
+  weight: ["500", "600", "700", "800", "900"],
+  variable: "--font-work-sans",
   display: "swap",
 });
 
@@ -35,7 +35,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${montserrat.variable} ${playfair.variable}`}
+      className={`${montserrat.variable} ${workSans.variable}`}
     >
       <body className="antialiased">{children}</body>
     </html>

@@ -28,11 +28,11 @@ export function CalendarShell({ events, overlays }: CalendarShellProps) {
 
   // Read initial view/anchor from URL so links are shareable.
   // Week is the default when the user lands with no ?view= param.
-  const initialView = (searchParams.get("view") as ViewMode | null) ?? "week";
+  const initialView = (searchParams.get("view") as ViewMode | null) ?? "feed";
   const initialDate = searchParams.get("date") ?? todayYmd();
 
   const [view, setView] = useState<ViewMode>(
-    ["feed", "3day", "week", "month"].includes(initialView) ? initialView : "week"
+    ["feed", "3day", "week", "month"].includes(initialView) ? initialView : "feed"
   );
   const [anchorYmd, setAnchorYmd] = useState<string>(initialDate);
 

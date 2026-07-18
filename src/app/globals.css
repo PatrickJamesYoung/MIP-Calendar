@@ -32,7 +32,9 @@
 
   /* Typography */
   --font-sans: var(--font-montserrat), "Montserrat", ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-playfair), "Playfair Display", Georgia, "Times New Roman", serif;
+  /* Display headers (site title, "Upcoming Events" hero, day numbers).
+     Currently Work Sans Bold — previously Playfair Display. */
+  --font-display: var(--font-work-sans), "Work Sans", ui-sans-serif, system-ui, sans-serif;
 
   /* Layout tokens */
   --max-width-content: 1400px;
@@ -66,12 +68,13 @@ body {
   letter-spacing: -0.005em;
 }
 
-/* Display-serif class for hero headers (Playfair Display). */
+/* Display class for hero headers. Work Sans at heavy weight w/ tighter
+   tracking so it reads as a display treatment, not body text. */
 .mip-display {
   font-family: var(--font-display);
   font-weight: 800;
-  line-height: 1.02em;
-  letter-spacing: -0.015em;
+  line-height: 1.05em;
+  letter-spacing: -0.02em;
 }
 
 /* Uppercase eyebrow label (Montserrat semibold, tracked). */
