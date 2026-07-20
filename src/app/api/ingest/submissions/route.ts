@@ -51,6 +51,19 @@ const AUTO_SUBMIT_SOURCES = new Set([
 ]);
 
 /**
+ * Sources whose events go through Perplexity LLM classification (see
+ * ingest/classify_llm.py). For these, `submit == "Don't Submit"` is a
+ * real "this event is off-topic" signal from the LLM and we drop it.
+ *
+ * For every other source, we insert into the review queue regardless of
+ * the `submit` flag — the admin UI's approve button is the real gate.
+ */
+const LLM_CLASSIFIED_SOURCES = new Set([
+  "PopVille",
+  "Busboys & Poets",
+]);
+
+/**
  * Build a stable external_id for dedup. Prefer event_url (unique per source),
  * fall back to (source|title|date) hash.
  */
@@ -134,7 +147,10 @@ export async function POST(req: Request) {
   for (const ev of events) {
     bump(ev.source, "fetched");
 
-    if (ev.submit !== "Submit") {
+    // Only drop when the LLM classifier explicitly said "Don't Submit".
+    // For all other sources, non-"Submit" events still land in the review
+    // queue with auto_submit=false. See LLM_CLASSIFIED_SOURCES above.
+    if (ev.submit !== "Submit" && LLM_CLASSIFIED_SOURCES.has(ev.source)) {
       skippedCount++;
       bump(ev.source, "skipped");
       continue;
