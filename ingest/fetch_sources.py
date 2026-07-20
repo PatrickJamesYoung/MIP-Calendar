@@ -151,6 +151,68 @@ def fetch_festival_center() -> None:
     )
 
 
+# Number of most-recent slugs (from top of the Action Network group page,
+# which lists upcoming/newest first) to fetch detail pages for. 60 is enough
+# headroom for any realistic upcoming-event backlog while staying cheap.
+_METRO_DC_DSA_MAX_SLUGS = 60
+
+
+def fetch_metro_dc_dsa() -> None:
+    """Fetch Metro DC DSA (Action Network) events.
+
+    Action Network group pages list events client-side via JS (all 700+
+    events push()'d into a JS array), but the raw HTML embeds those
+    push() calls, so we can extract slugs directly. The group page lists
+    upcoming events first, so we fetch detail pages for only the top N
+    slugs.
+
+    Each event page has a ?nowrapper=true variant that returns server-
+    rendered HTML with the date/time/location parseable via regex.
+    """
+    import re
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    group_dest = RUN_DIR / "raw_metro_dc_dsa_group.html"
+    _fetch(
+        "https://actionnetwork.org/groups/metro-dc-dsa",
+        group_dest,
+        kind="html",
+    )
+
+    group_html = ""
+    try:
+        group_html = group_dest.read_text(encoding="utf-8", errors="replace")
+    except Exception as e:
+        print(f"  [metro-dc-dsa] could not read group page: {e}", file=sys.stderr)
+        return
+
+    # Extract event slugs from the embedded JS push() calls.
+    slug_matches = re.findall(
+        r'group_public_action_list_array\.push\(\{\s*li_wrapper:\s*\'<a\s+href="'
+        r'https://actionnetwork\.org/events/([^"/?]+)"',
+        group_html,
+    )
+    seen: set[str] = set()
+    slugs: list[str] = []
+    for s in slug_matches:
+        if s not in seen:
+            seen.add(s)
+            slugs.append(s)
+
+    slugs = slugs[:_METRO_DC_DSA_MAX_SLUGS]
+    print(f"  [metro-dc-dsa] found {len(slug_matches)} slugs; fetching top {len(slugs)}")
+
+    def _fetch_one(slug: str) -> None:
+        url = f"https://actionnetwork.org/events/{slug}?nowrapper=true"
+        dest = RUN_DIR / f"raw_metro_dc_dsa_{slug}.html"
+        _fetch(url, dest, kind="html")
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(_fetch_one, s) for s in slugs]
+        for _ in as_completed(futures):
+            pass
+
+
 def fetch_existing_rows() -> None:
     """Pull the dedup state from the calendar API and lay it out in the
     exact shape runner.py expects: a JSON list of [source, title, date, time]
@@ -256,6 +318,7 @@ def main() -> None:
     fetch_mobilize()
     fetch_rhizome()
     fetch_festival_center()
+    fetch_metro_dc_dsa()
     print("[fetch] Dedup + Trumba compat:")
     fetch_existing_rows()
     write_trumba_from_db()

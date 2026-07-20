@@ -12,6 +12,11 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
 
+# External source parser modules (kept outside runner.py per convention).
+# Only the sources loop in main() references these.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from parse_metro_dc_dsa import parse_metro_dc_dsa as _parse_metro_dc_dsa_ext  # noqa: E402
+
 # RUN_DIR resolution order:
 #   1. $RUN_DIR env var (preferred: caller sets it)
 #   2. $PWD if the current directory contains raw_freedc.json or is under cron_tracking/37024eca/
@@ -624,6 +629,7 @@ def main():
         (parse_mobilize, 'Mobilize'),
         (parse_rhizome, 'Rhizome DC'),
         (parse_festival_center, 'Festival Center'),
+        (lambda: _parse_metro_dc_dsa_ext(RUN_DIR), 'Metro DC DSA'),
     ]:
         try:
             evs = fn()
