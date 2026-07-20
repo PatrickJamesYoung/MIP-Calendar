@@ -98,37 +98,51 @@ export async function GET(req: Request) {
 
   const rows: Array<[string, string, string, string]> = [];
 
+  // The runner's exact-match dedup key is (source, title, date). Its
+  // source column comes from the parser that emitted the row ("Free DC",
+  // "Grassroots DC", etc.), not from our DB's source enum. That means a
+  // historical row stored with source='trumba' (or 'admin', or
+  // 'submission') will never exact-match an incoming 'Free DC' row on
+  // its own — the fuzzy fallback was supposed to catch it but is
+  // brittle across rewordings. So we emit every published/queued event
+  // once per runner source name. Any incoming row with a matching
+  // (title, date) will now exact-match regardless of which publisher
+  // brought it in this run.
+  const RUNNER_SOURCES = [
+    "Free DC",
+    "Grassroots DC",
+    "Rhizome DC",
+    "Mobilize",
+    "Festival Center",
+    "PopVille",
+    "Busboys & Poets",
+    "Metro DC DSA",
+  ];
+
+  const pushForAllSources = (title: string, date: string, time: string) => {
+    if (!title || !date) return;
+    for (const src of RUNNER_SOURCES) {
+      rows.push([src, title, date, time]);
+    }
+  };
+
   for (const e of events ?? []) {
     const { date, time } = toEtDateAndTime(e.starts_at as string | null);
-    // "source" for calendar's own events: use the source column if set,
-    // else default to "Movement Calendar" (won't match runner.py source names,
-    // which is fine — the (title, date) pair is what actually dedupes).
-    rows.push([
-      typeof e.source === "string" ? e.source : "Movement Calendar",
-      (e.title as string) ?? "",
-      date,
-      time,
-    ]);
+    pushForAllSources((e.title as string) ?? "", date, time);
   }
 
   for (const s of subs ?? []) {
     const payload = (s.event_payload as { title?: string; starts_at?: string } | null) ?? {};
     const { date, time } = toEtDateAndTime(payload.starts_at ?? null);
-    rows.push([
-      (s.source_name as string) ?? "Movement Calendar",
-      payload.title ?? "",
-      date,
-      time,
-    ]);
+    pushForAllSources(payload.title ?? "", date, time);
   }
 
   for (const h of history ?? []) {
-    rows.push([
-      (h.source_name as string) ?? "",
+    pushForAllSources(
       (h.title as string) ?? "",
       (h.event_date as string) ?? "",
-      (h.event_time as string) ?? "",
-    ]);
+      (h.event_time as string) ?? ""
+    );
   }
 
   // Runner.py dedupes exact matches on (source, title, date) using this
