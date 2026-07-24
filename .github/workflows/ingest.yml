@@ -1,13 +1,11 @@
-name: Bi-weekly DC events ingest
+name: Daily DC events ingest
 
 on:
-  # Sunday + Thursday around 20:00 America/New_York, matching the old
-  # Google Sheets cadence. We run once a day at 00:30 UTC on Mon/Fri — that's
-  # 19:30 ET during EST (Nov–Mar) or 20:30 ET during EDT (Mar–Nov). The ~30-min
-  # DST drift is fine for a bi-weekly cron. Single cron avoids the classic
-  # "two-cron DST" pitfall where both fire during EDT.
+  # Daily at 16:00 UTC = noon EDT year-round.
+  # During EST months (Nov–Mar) this becomes 11 AM ET, which is fine.
+  # GitHub Actions cron runs in UTC and does not follow DST.
   schedule:
-    - cron: '30 0 * * 1,5'
+    - cron: '0 16 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -75,3 +73,15 @@ jobs:
           name: ingest-run-${{ github.run_id }}
           path: ${{ env.RUN_DIR }}
           retention-days: 14
+
+      - name: Email run summary via Resend
+        if: always()
+        env:
+          RUN_DIR: ${{ env.RUN_DIR }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          NOTIFY_TO: ${{ secrets.INGEST_NOTIFY_TO }}
+          NOTIFY_FROM: ${{ secrets.INGEST_NOTIFY_FROM }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+        run: python ingest/send_run_email.py

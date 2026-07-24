@@ -53,6 +53,10 @@ def main() -> None:
         body = json.loads(resp.read().decode("utf-8"))
 
     print(f"[post] response: {json.dumps(body, indent=2)}")
+
+    # Persist so downstream steps (email notifier) can build a summary
+    # without having to re-POST.
+    (RUN_DIR / "post_response.json").write_text(json.dumps(body, indent=2))
     # Sanity: if we sent Submit-marked events but nothing was inserted or
     # skipped-as-duplicate, something went wrong upstream.
     if (
