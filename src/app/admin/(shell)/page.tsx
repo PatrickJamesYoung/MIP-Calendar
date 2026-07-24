@@ -1,40 +1,56 @@
 import Link from "next/link";
 import { Plus, Calendar, Users, Filter } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { EventRow } from "./events/event-row";
+import { PaginatedEventList } from "./events/paginated-event-list";
 
 export const dynamic = "force-dynamic";
+
+const PAGE_SIZE = 50;
+const PAST_PAGE_SIZE = 10;
+const EVENT_COLUMNS =
+  "id, title, slug, starts_at, ends_at, all_day, timezone, is_featured, status, image_url, overlay_calendar_id, overlay_calendar:overlay_calendars(id, name, slug, color, default_visible, sort_order, description)";
 
 export default async function AdminHomePage() {
   const supabase = await createClient();
 
   const nowIso = new Date().toISOString();
-  const [{ data: upcoming }, { data: past }, { count: submissionCount }] =
-    await Promise.all([
-      supabase
-        .from("events")
-        .select(
-          "id, title, slug, starts_at, ends_at, all_day, timezone, is_featured, status, image_url, overlay_calendar_id, overlay_calendar:overlay_calendars(id, name, slug, color, default_visible, sort_order, description)"
-        )
-        .gte("starts_at", nowIso)
-        .order("starts_at", { ascending: true })
-        .limit(50),
-      supabase
-        .from("events")
-        .select(
-          "id, title, slug, starts_at, ends_at, all_day, timezone, is_featured, status, image_url, overlay_calendar_id, overlay_calendar:overlay_calendars(id, name, slug, color, default_visible, sort_order, description)"
-        )
-        .lt("starts_at", nowIso)
-        .order("starts_at", { ascending: false })
-        .limit(10),
-      supabase
-        .from("submissions")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending"),
-    ]);
+  const [
+    { data: upcoming },
+    { data: past },
+    { count: submissionCount },
+    { count: upcomingTotal },
+    { count: pastTotal },
+  ] = await Promise.all([
+    supabase
+      .from("events")
+      .select(EVENT_COLUMNS)
+      .gte("starts_at", nowIso)
+      .order("starts_at", { ascending: true })
+      .limit(PAGE_SIZE),
+    supabase
+      .from("events")
+      .select(EVENT_COLUMNS)
+      .lt("starts_at", nowIso)
+      .order("starts_at", { ascending: false })
+      .limit(PAST_PAGE_SIZE),
+    supabase
+      .from("submissions")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending"),
+    supabase
+      .from("events")
+      .select("id", { count: "exact", head: true })
+      .gte("starts_at", nowIso),
+    supabase
+      .from("events")
+      .select("id", { count: "exact", head: true })
+      .lt("starts_at", nowIso),
+  ]);
 
   const upcomingEvents = upcoming ?? [];
   const pastEvents = past ?? [];
+  const upcomingTotalCount = upcomingTotal ?? upcomingEvents.length;
+  const pastTotalCount = pastTotal ?? pastEvents.length;
 
   return (
     <div className="space-y-8">
@@ -68,7 +84,7 @@ export default async function AdminHomePage() {
         <StatCard
           icon={<Calendar className="w-4 h-4" />}
           label="Upcoming"
-          value={upcomingEvents.length}
+          value={upcomingTotalCount}
           href="#upcoming"
         />
         <StatCard
@@ -87,44 +103,39 @@ export default async function AdminHomePage() {
         <StatCard
           icon={<Calendar className="w-4 h-4" />}
           label="Recent past"
-          value={pastEvents.length}
+          value={pastTotalCount}
           href="#past"
         />
       </div>
 
       <section id="upcoming">
         <h2 className="mip-heading text-lg mb-3" style={{ color: "var(--color-mip-purple)" }}>
-          Upcoming ({upcomingEvents.length})
+          Upcoming ({upcomingTotalCount})
         </h2>
         {upcomingEvents.length === 0 ? (
           <EmptyState />
         ) : (
-          <div className="border border-mip-gray-200" style={{ borderRadius: "var(--radius-button)" }}>
-            {upcomingEvents.map((e, i) => (
-              <EventRow
-                key={e.id}
-                event={e as never}
-                isLast={i === upcomingEvents.length - 1}
-              />
-            ))}
-          </div>
+          <PaginatedEventList
+            initialEvents={upcomingEvents}
+            scope="upcoming"
+            pageSize={PAGE_SIZE}
+            totalCount={upcomingTotalCount}
+          />
         )}
       </section>
 
       {pastEvents.length > 0 && (
         <section id="past">
           <h2 className="mip-heading text-lg mb-3 text-mip-gray-500">
-            Recent past ({pastEvents.length})
+            Recent past ({pastTotalCount})
           </h2>
-          <div className="border border-mip-gray-200 opacity-70" style={{ borderRadius: "var(--radius-button)" }}>
-            {pastEvents.map((e, i) => (
-              <EventRow
-                key={e.id}
-                event={e as never}
-                isLast={i === pastEvents.length - 1}
-              />
-            ))}
-          </div>
+          <PaginatedEventList
+            initialEvents={pastEvents}
+            scope="past"
+            pageSize={PAST_PAGE_SIZE}
+            totalCount={pastTotalCount}
+            dimmed
+          />
         </section>
       )}
     </div>
