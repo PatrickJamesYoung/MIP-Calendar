@@ -74,14 +74,14 @@ jobs:
           path: ${{ env.RUN_DIR }}
           retention-days: 14
 
-      - name: Email run summary via Resend
+      - name: Email run summary (via /api/ingest/notify)
         if: always()
         env:
           RUN_DIR: ${{ env.RUN_DIR }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          NOTIFY_TO: ${{ secrets.INGEST_NOTIFY_TO }}
-          NOTIFY_FROM: ${{ secrets.INGEST_NOTIFY_FROM }}
+          INGEST_API_BASE: ${{ secrets.INGEST_API_BASE }}
+          INGEST_BEARER_TOKEN: ${{ secrets.INGEST_BEARER_TOKEN }}
           RUN_ID: ${{ github.run_id }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           JOB_STATUS: ${{ job.status }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: python ingest/send_run_email.py

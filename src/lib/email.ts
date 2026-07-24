@@ -174,6 +174,29 @@ export async function emailSubmitterRejected(args: {
   return send({ to: args.submitterEmail, subject, html, text });
 }
 
+/**
+ * Send a generic admin-only email. Used for ops notifications like
+ * ingest-run summaries. Recipients come from ADMIN_NOTIFY_EMAILS.
+ */
+export async function sendAdminEmail(args: {
+  subject: string;
+  bodyHtml: string;
+  bodyText: string;
+  preheader?: string;
+}) {
+  if (ADMIN_NOTIFY.length === 0) {
+    console.warn("[email] ADMIN_NOTIFY_EMAILS not set \u2014 nowhere to send admin email");
+    return { ok: false, error: "no-admins-configured" };
+  }
+  const html = wrapEmail(args.preheader ?? args.subject, args.bodyHtml);
+  return send({
+    to: ADMIN_NOTIFY,
+    subject: args.subject,
+    html,
+    text: args.bodyText,
+  });
+}
+
 // ---------- helpers ----------
 
 function wrapEmail(preheader: string, body: string): string {
