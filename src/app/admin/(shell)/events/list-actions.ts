@@ -4,7 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 const EVENT_COLUMNS =
-  "id, title, slug, starts_at, ends_at, all_day, timezone, is_featured, status, image_url, overlay_calendar_id, overlay_calendar:overlay_calendars(id, name, slug, color, default_visible, sort_order, description)";
+  "id, title, slug, starts_at, ends_at, all_day, timezone, is_featured, status, image_url, view_count, overlay_calendar_id, overlay_calendar:overlay_calendars(id, name, slug, color, default_visible, sort_order, description)";
 
 /**
  * Fetch a page of upcoming or past events for the admin dashboard.

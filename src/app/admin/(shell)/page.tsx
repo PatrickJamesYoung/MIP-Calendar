@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZE = 50;
 const PAST_PAGE_SIZE = 10;
 const EVENT_COLUMNS =
-  "id, title, slug, starts_at, ends_at, all_day, timezone, is_featured, status, image_url, overlay_calendar_id, overlay_calendar:overlay_calendars(id, name, slug, color, default_visible, sort_order, description)";
+  "id, title, slug, starts_at, ends_at, all_day, timezone, is_featured, status, image_url, view_count, overlay_calendar_id, overlay_calendar:overlay_calendars(id, name, slug, color, default_visible, sort_order, description)";
 
 export default async function AdminHomePage() {
   const supabase = await createClient();

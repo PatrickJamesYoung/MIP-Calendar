@@ -25,6 +25,7 @@ import type {
 } from "@/lib/types";
 import { SAMPLE_EVENTS } from "@/lib/sample-data";
 import { prepareDescription } from "@/lib/event-description";
+import { TrackView } from "./track-view";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +89,7 @@ export default async function EventDetailPage({ params }: Props) {
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
+      <TrackView slug={event.slug} />
       <SiteHeader />
 
       <main className="flex-1">

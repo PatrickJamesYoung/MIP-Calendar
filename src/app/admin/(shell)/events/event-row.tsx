@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTransition } from "react";
-import { Star, Pencil, Trash2 } from "lucide-react";
+import { Star, Pencil, Trash2, Eye } from "lucide-react";
 import type { CalendarEvent, OverlayCalendar } from "@/lib/types";
 import { formatDateBadge, formatTimeRange, cn } from "@/lib/utils";
 import { deleteEventAction, toggleFeaturedAction } from "./actions";
@@ -20,7 +20,13 @@ type Row = Pick<
   | "status"
   | "image_url"
   | "overlay_calendar_id"
-> & { overlay_calendar: OverlayCalendar | null };
+> & { overlay_calendar: OverlayCalendar | null; view_count?: number | null };
+
+function formatViewCount(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 10000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  return Math.round(n / 1000) + "k";
+}
 
 export function EventRow({ event, isLast }: { event: Row; isLast: boolean }) {
   const [pending, start] = useTransition();
@@ -98,6 +104,19 @@ export function EventRow({ event, isLast }: { event: Row; isLast: boolean }) {
         <p className="text-xs text-mip-gray-700 truncate">
           {badge.weekday}, {badge.month} {badge.day} · {time}
         </p>
+      </div>
+
+      <div
+        className="shrink-0 hidden sm:flex flex-col items-end justify-center text-right px-2 min-w-[52px]"
+        title={`${event.view_count ?? 0} detail-page views`}
+      >
+        <div className="flex items-center gap-1 text-mip-gray-700">
+          <Eye className="w-3 h-3" />
+          <span className="text-sm font-semibold tabular-nums">
+            {formatViewCount(event.view_count ?? 0)}
+          </span>
+        </div>
+        <div className="text-[9px] uppercase tracking-wide text-mip-gray-500">views</div>
       </div>
 
       <div className="flex items-center gap-1">
