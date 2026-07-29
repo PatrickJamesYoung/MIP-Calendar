@@ -40,8 +40,11 @@ export async function updateSession(request: NextRequest) {
   const isAdminRoute = pathname.startsWith("/admin");
   const isAdminLogin = pathname === "/admin/login";
   const isAuthCallback = pathname.startsWith("/auth/");
+  // /admin/invite/[token] is a public magic-link page — it handles its
+  // own "sign in to accept" prompt for unauthenticated visitors.
+  const isAdminInvite = pathname.startsWith("/admin/invite/");
 
-  if (isAdminRoute && !isAdminLogin && !isAuthCallback && !user) {
+  if (isAdminRoute && !isAdminLogin && !isAuthCallback && !isAdminInvite && !user) {
     const url = request.nextUrl.clone();
     url.pathname = "/admin/login";
     url.searchParams.set("redirectTo", pathname);
