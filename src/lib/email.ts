@@ -197,6 +197,50 @@ export async function sendAdminEmail(args: {
   });
 }
 
+/**
+ * Send an admin-invite email with a magic acceptance link.
+ * Recipient is the invitee, not ADMIN_NOTIFY_EMAILS.
+ */
+export async function sendAdminInvite(args: {
+  toEmail: string;
+  acceptUrl: string;
+  invitedByName: string | null;
+  invitedByEmail: string;
+  expiresAt: Date;
+}) {
+  const inviterLabel = args.invitedByName?.trim()
+    ? `${args.invitedByName} (${args.invitedByEmail})`
+    : args.invitedByEmail;
+  const expiryLabel = args.expiresAt.toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    dateStyle: "long",
+    timeStyle: "short",
+  });
+  const subject = "You're invited to admin the MIP Movement Calendar";
+  const html = wrapEmail(
+    subject,
+    `
+    <p>${escapeHtml(inviterLabel)} has invited you to be an admin on the
+    <a href="https://mip.la/calendar" style="color:#39375b;font-weight:600;">MIP Movement Calendar</a>.</p>
+    <p>Admins can approve incoming events, edit/feature listings, and invite other admins.</p>
+    <p style="margin:24px 0;">
+      <a href="${escapeHtml(args.acceptUrl)}"
+         style="display:inline-block;background:#39375b;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;font-weight:600;">
+        Accept invite &rarr;
+      </a>
+    </p>
+    <p style="color:#6b7280;font-size:13px;">This link is single-use and expires ${escapeHtml(expiryLabel)} ET.</p>
+    <p style="color:#6b7280;font-size:12px;margin-top:16px;">If you weren't expecting this, you can safely ignore this email.</p>
+    `
+  );
+  const text =
+    `${inviterLabel} invited you to be an admin on the MIP Movement Calendar.\n\n` +
+    `Accept: ${args.acceptUrl}\n\n` +
+    `This link is single-use and expires ${expiryLabel} ET. ` +
+    `If you weren't expecting this, you can ignore it.`;
+  return send({ to: args.toEmail, subject, html, text });
+}
+
 // ---------- helpers ----------
 
 function wrapEmail(preheader: string, body: string): string {
