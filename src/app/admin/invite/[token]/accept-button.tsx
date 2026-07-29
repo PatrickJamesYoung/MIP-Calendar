@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { acceptAdminInvite } from "./actions";
+import { acceptInviteWithSession } from "./actions";
 
-export function AcceptInviteButton({ token }: { token: string }) {
+export function AcceptWithSession({ token }: { token: string }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -12,7 +12,7 @@ export function AcceptInviteButton({ token }: { token: string }) {
   function handleAccept() {
     setError(null);
     start(async () => {
-      const r = await acceptAdminInvite(token);
+      const r = await acceptInviteWithSession(token);
       if (r.ok) {
         router.push("/admin");
       } else {

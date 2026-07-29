@@ -229,6 +229,7 @@ export async function sendAdminInvite(args: {
         Accept invite &rarr;
       </a>
     </p>
+    <p style="color:#6b7280;font-size:13px;">Click the button to create your account by setting a password, or sign in with Google if you prefer.</p>
     <p style="color:#6b7280;font-size:13px;">This link is single-use and expires ${escapeHtml(expiryLabel)} ET.</p>
     <p style="color:#6b7280;font-size:12px;margin-top:16px;">If you weren't expecting this, you can safely ignore this email.</p>
     `
