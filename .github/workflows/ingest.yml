@@ -57,6 +57,11 @@ jobs:
           PPLX_API_KEY: ${{ secrets.PPLX_API_KEY }}
         run: python ingest/classify_llm.py
 
+      - name: Cross-source dedup (collapse Grassroots aggregator overlaps)
+        env:
+          RUN_DIR: ${{ env.RUN_DIR }}
+        run: python ingest/cross_source_dedup.py
+
       - name: POST → /api/ingest/submissions
         if: ${{ inputs.dry_run != true }}
         env:

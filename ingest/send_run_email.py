@@ -50,9 +50,15 @@ def main() -> int:
 
     new_events = _load_json(run_dir / "new_events.json") or []
     post_response = _load_json(run_dir / "post_response.json") or {}
+    dedup_report = _load_json(run_dir / "dedup_report.json") or {}
 
     by_source = Counter((e.get("source") or "?") for e in new_events)
     total_new = sum(by_source.values())
+
+    # Cross-source dedup (collapses Grassroots ↔ original-source overlaps
+    # within a single run). See ingest/cross_source_dedup.py.
+    cross_source_collapsed = int(dedup_report.get("collapsed") or 0)
+    cross_source_entries = dedup_report.get("entries") or []
 
     # /api/ingest/submissions returns submitted_count / skipped_count / needs_review_count.
     inserted = post_response.get("submitted_count") if post_response else None
@@ -75,6 +81,10 @@ def main() -> int:
         "needs_review": needs_review,
         "skipped": skipped,
         "by_source": dict(by_source),
+        "cross_source_collapsed": cross_source_collapsed,
+        # Cap the audit list so the email stays readable if something odd
+        # produces a big report — full data is always in the run artifact.
+        "cross_source_entries": cross_source_entries[:20],
         "dry_run": (os.environ.get("DRY_RUN") or "").lower() == "true",
     }
 
