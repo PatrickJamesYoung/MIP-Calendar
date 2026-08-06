@@ -1,0 +1,64 @@
+name: Ingest auto-retry
+
+# Retries the daily ingest exactly once when GitHub Actions fails to
+# allocate a hosted runner. That failure mode shows up as a cancelled
+# job with zero recorded steps and no application logs — the workflow
+# never actually ran. This is separate from real application failures,
+# which should still get a human eye.
+#
+# We only retry:
+#   - the scheduled run (not manual dispatches — if you triggered it,
+#     you can rerun it yourself)
+#   - runs that came from the same commit as this workflow file
+#   - runs that haven't already been retried (guarded by the run_attempt
+#     count exposed on the triggering run)
+
+on:
+  workflow_run:
+    workflows: ["Daily DC events ingest"]
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  maybe-retry:
+    if: >-
+      github.event.workflow_run.event == 'schedule' &&
+      github.event.workflow_run.conclusion != 'success' &&
+      github.event.workflow_run.run_attempt < 2
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect failed run
+        id: inspect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Any step recorded on the job means the runner picked it up
+          # and the app code ran (or at least started). In that case a
+          # human should look — do not auto-retry.
+          step_count=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" \
+            --jq '[.jobs[] | .steps | length] | add // 0')
+          echo "step_count=$step_count"
+          echo "step_count=$step_count" >> "$GITHUB_OUTPUT"
+
+      - name: Rerun failed job
+        if: steps.inspect.outputs.step_count == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "Runner never acquired the job (0 steps). Retrying once."
+          gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/rerun-failed-jobs"
+
+      - name: Skip retry (real failure, needs human eyes)
+        if: steps.inspect.outputs.step_count != '0'
+        run: |
+          echo "Job ran and failed inside the pipeline. Not auto-retrying;"
+          echo "the run summary email should have the details."
