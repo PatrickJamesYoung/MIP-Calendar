@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Pencil, Clock, History } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { WikiMarkdown } from "@/components/admin/wiki/markdown";
+import { WikiBody } from "@/components/admin/wiki/body";
 import { DeleteWikiPageButton } from "./delete-button";
 
 export const dynamic = "force-dynamic";
@@ -107,7 +107,7 @@ export default async function WikiViewPage({
         className="border border-mip-gray-200 bg-white p-6"
         style={{ borderRadius: "var(--radius-card)" }}
       >
-        <WikiMarkdown source={page.body_md} />
+        <WikiBody source={page.body_md} />
       </article>
     </div>
   );

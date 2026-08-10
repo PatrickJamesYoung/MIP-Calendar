@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Clock } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { WikiMarkdown } from "@/components/admin/wiki/markdown";
+import { WikiBody } from "@/components/admin/wiki/body";
 import { diffLines, diffStats } from "@/lib/wiki/diff";
 import { restoreVersion } from "../../../actions";
 import { RestoreVersionButton } from "./restore-button";
@@ -171,7 +171,7 @@ export default async function WikiVersionPage({
           className="border border-mip-gray-200 bg-white p-6"
           style={{ borderRadius: "var(--radius-card)" }}
         >
-          <WikiMarkdown source={thisVersion.body_md} />
+          <WikiBody source={thisVersion.body_md} />
         </article>
       )}
 
