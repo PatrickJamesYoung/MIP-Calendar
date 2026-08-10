@@ -316,3 +316,81 @@ textarea.mip-input {
 .calendar-scaled .mip-nav-text      { font-size: 1.125rem; }       /* 0.9 → 1.125 */
 .calendar-scaled .mip-priority-badge { font-size: 0.875rem; padding: 3px 8px; } /* 0.7 → 0.875 */
 .calendar-scaled .mip-eyebrow       { font-size: 0.9375rem; }     /* 0.75 → 0.9375 */
+
+/* ============================================
+   Wiki prose — styling for react-markdown output
+   in /admin/wiki/[slug]. Scoped so it doesn't
+   affect the rest of the admin.
+   ============================================ */
+.wiki-prose {
+  font-family: var(--font-sans);
+  color: var(--color-mip-gray-900, #111);
+  line-height: 1.65;
+  font-size: 0.95rem;
+}
+.wiki-prose h1,
+.wiki-prose h2,
+.wiki-prose h3,
+.wiki-prose h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--color-mip-purple);
+  line-height: 1.15;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+.wiki-prose h1 { font-size: 1.75rem; }
+.wiki-prose h2 { font-size: 1.375rem; }
+.wiki-prose h3 { font-size: 1.125rem; }
+.wiki-prose h4 { font-size: 1rem; }
+.wiki-prose p { margin: 0.75em 0; }
+.wiki-prose ul,
+.wiki-prose ol { margin: 0.75em 0; padding-left: 1.5em; }
+.wiki-prose ul { list-style: disc; }
+.wiki-prose ol { list-style: decimal; }
+.wiki-prose li { margin: 0.25em 0; }
+.wiki-prose li > input[type="checkbox"] { margin-right: 0.4em; }
+.wiki-prose code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.85em;
+  background: var(--color-mip-gray-100, #f4f4f5);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+.wiki-prose pre {
+  background: var(--color-mip-gray-100, #f4f4f5);
+  padding: 0.9em 1em;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+.wiki-prose pre code { background: transparent; padding: 0; font-size: 0.85em; }
+.wiki-prose blockquote {
+  border-left: 3px solid var(--color-mip-purple);
+  padding: 0.1em 0 0.1em 1em;
+  color: var(--color-mip-gray-700, #555);
+  margin: 1em 0;
+  font-style: italic;
+}
+.wiki-prose hr {
+  border: 0;
+  border-top: 1px solid var(--color-mip-gray-200, #e5e5e5);
+  margin: 2em 0;
+}
+.wiki-prose table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  width: 100%;
+  font-size: 0.9em;
+}
+.wiki-prose th,
+.wiki-prose td {
+  border: 1px solid var(--color-mip-gray-200, #e5e5e5);
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+.wiki-prose th {
+  background: var(--color-mip-gray-100, #f4f4f5);
+  font-weight: 600;
+}
+.wiki-prose img { max-width: 100%; height: auto; border-radius: 4px; }
