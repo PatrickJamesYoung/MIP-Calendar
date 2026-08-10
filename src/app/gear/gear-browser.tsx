@@ -15,7 +15,13 @@ interface Item {
   short_description: string | null;
   how_to_use_url: string | null;
   photo_url: string | null;
+  follow_up_question: string | null;
   sort_order: number;
+}
+
+interface CartLine {
+  qty: number;
+  followUpAnswer?: string;
 }
 
 type Tier = "full" | "mid" | "low";
@@ -30,7 +36,7 @@ const ALL_CATEGORIES = "__all__";
 const UNCATEGORIZED = "Other";
 
 export function GearBrowser({ items, tierLabels, tierMultipliers }: Props) {
-  const [cart, setCart] = useState<Record<string, number>>({});
+  const [cart, setCart] = useState<Record<string, CartLine>>({});
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [tier, setTier] = useState<Tier>("mid");
@@ -69,12 +75,15 @@ export function GearBrowser({ items, tierLabels, tierMultipliers }: Props) {
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [filtered]);
 
-  const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
+  const cartCount = Object.values(cart).reduce(
+    (a, line) => a + (line?.qty ?? 0),
+    0
+  );
 
   const cartSubtotal = useMemo(() => {
     let sum = 0;
     for (const it of items) {
-      const q = cart[it.slug] ?? 0;
+      const q = cart[it.slug]?.qty ?? 0;
       if (q > 0)
         sum += q * Number(it.suggested_contribution ?? 0) * multiplier;
     }
@@ -82,21 +91,41 @@ export function GearBrowser({ items, tierLabels, tierMultipliers }: Props) {
   }, [cart, items, multiplier]);
 
   const reserveUrl = useMemo(() => {
-    const parts = Object.entries(cart)
-      .filter(([, q]) => q > 0)
-      .map(([slug, q]) => `${slug}:${q}`);
-    if (parts.length === 0) return null;
-    return `/gear/reserve?items=${encodeURIComponent(
-      parts.join(",")
-    )}&tier=${tier}`;
+    const entries = Object.entries(cart).filter(
+      ([, line]) => (line?.qty ?? 0) > 0
+    );
+    if (entries.length === 0) return null;
+    const items = entries.map(([slug, line]) => `${slug}:${line.qty}`).join(",");
+    const answers = entries
+      .filter(([, line]) => line.followUpAnswer && line.followUpAnswer.trim())
+      .map(
+        ([slug, line]) =>
+          `${slug}|${line.followUpAnswer!.trim().slice(0, 500)}`
+      )
+      .join(";");
+    const params = new URLSearchParams({ items, tier });
+    if (answers) params.set("answers", answers);
+    return `/gear/reserve?${params.toString()}`;
   }, [cart, tier]);
 
-  function setQty(slug: string, qty: number, max: number) {
+  function setLine(
+    slug: string,
+    qty: number,
+    max: number,
+    followUpAnswer?: string
+  ) {
     setCart((c) => {
       const copy = { ...c };
       const clamped = Math.max(0, Math.min(qty, max));
-      if (clamped === 0) delete copy[slug];
-      else copy[slug] = clamped;
+      if (clamped === 0) {
+        delete copy[slug];
+      } else {
+        const trimmed = followUpAnswer?.trim();
+        copy[slug] = {
+          qty: clamped,
+          ...(trimmed ? { followUpAnswer: trimmed } : {}),
+        };
+      }
       return copy;
     });
   }
@@ -163,7 +192,7 @@ export function GearBrowser({ items, tierLabels, tierMultipliers }: Props) {
             </h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {catItems.map((it) => {
-                const qtyInCart = cart[it.slug] ?? 0;
+                const qtyInCart = cart[it.slug]?.qty ?? 0;
                 const adjustedPrice =
                   Number(it.suggested_contribution ?? 0) * multiplier;
                 return (
@@ -264,10 +293,11 @@ export function GearBrowser({ items, tierLabels, tierMultipliers }: Props) {
         <ItemModal
           item={openItem}
           multiplier={multiplier}
-          initialQty={cart[openItem.slug] ?? 0}
+          initialQty={cart[openItem.slug]?.qty ?? 0}
+          initialAnswer={cart[openItem.slug]?.followUpAnswer ?? ""}
           onClose={() => setOpenItem(null)}
-          onSave={(qty) => {
-            setQty(openItem.slug, qty, openItem.quantity_total);
+          onSave={(qty, answer) => {
+            setLine(openItem.slug, qty, openItem.quantity_total, answer);
             setOpenItem(null);
           }}
         />
@@ -328,18 +358,23 @@ function ItemModal({
   item,
   multiplier,
   initialQty,
+  initialAnswer,
   onClose,
   onSave,
 }: {
   item: Item;
   multiplier: number;
   initialQty: number;
+  initialAnswer: string;
   onClose: () => void;
-  onSave: (qty: number) => void;
+  onSave: (qty: number, answer?: string) => void;
 }) {
   const [qty, setQty] = useState<number>(initialQty > 0 ? initialQty : 1);
+  const [answer, setAnswer] = useState<string>(initialAnswer);
   const max = item.quantity_total;
   const adjustedUnit = Number(item.suggested_contribution ?? 0) * multiplier;
+  const requiresAnswer = Boolean(item.follow_up_question?.trim());
+  const answerMissing = requiresAnswer && answer.trim() === "";
 
   return (
     <div
@@ -418,6 +453,36 @@ function ItemModal({
               </a>
             )}
 
+            {requiresAnswer && (
+              <div>
+                <label
+                  htmlFor="gear-follow-up-answer"
+                  className="mb-1 block text-xs font-medium uppercase tracking-wide text-mip-gray-500"
+                >
+                  {item.follow_up_question}{" "}
+                  <span className="text-rose-600">*</span>
+                </label>
+                <textarea
+                  id="gear-follow-up-answer"
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value.slice(0, 500))}
+                  rows={2}
+                  maxLength={500}
+                  required
+                  aria-invalid={answerMissing}
+                  className={`w-full rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-mip-purple/40 ${
+                    answerMissing
+                      ? "border-rose-400"
+                      : "border-mip-gray-300"
+                  }`}
+                  placeholder="Your answer…"
+                />
+                <p className="mt-1 text-xs text-mip-gray-500">
+                  Required to add this item.
+                </p>
+              </div>
+            )}
+
             <div>
               <div className="mb-1 text-xs font-medium uppercase tracking-wide text-mip-gray-500">
                 Quantity
@@ -482,8 +547,9 @@ function ItemModal({
           </button>
           <button
             type="button"
-            onClick={() => onSave(qty)}
-            className="rounded-md px-4 py-2 text-sm font-semibold text-white"
+            onClick={() => onSave(qty, requiresAnswer ? answer : undefined)}
+            disabled={answerMissing}
+            className="rounded-md px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
             style={{ backgroundColor: "var(--color-mip-purple)" }}
           >
             {initialQty > 0 ? "Update" : "Add to list"}

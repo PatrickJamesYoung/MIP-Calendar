@@ -14,6 +14,7 @@ interface Item {
   short_description: string | null;
   how_to_use_url: string | null;
   photo_url: string | null;
+  follow_up_question: string | null;
   sort_order: number;
 }
 
@@ -35,7 +36,7 @@ export default async function GearIndexPage() {
     supabase
       .from("gear_items")
       .select(
-        "id,slug,name,category,quantity_total,suggested_contribution,unit,short_description,how_to_use_url,photo_url,sort_order"
+        "id,slug,name,category,quantity_total,suggested_contribution,unit,short_description,how_to_use_url,photo_url,follow_up_question,sort_order"
       )
       .eq("active", true)
       .order("sort_order", { ascending: true })

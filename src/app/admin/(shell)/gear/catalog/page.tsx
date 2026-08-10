@@ -21,6 +21,8 @@ interface Item {
   short_description: string | null;
   how_to_use_url: string | null;
   photo_url: string | null;
+  follow_up_question: string | null;
+  requires_electricity: boolean;
   active: boolean;
   sort_order: number;
   updated_at: string;
@@ -33,7 +35,7 @@ export default async function GearCatalogPage() {
   const { data, error } = await supabase
     .from("gear_items")
     .select(
-      "id,slug,name,category,quantity_total,suggested_contribution,unit,short_description,how_to_use_url,photo_url,active,sort_order,updated_at"
+      "id,slug,name,category,quantity_total,suggested_contribution,unit,short_description,how_to_use_url,photo_url,follow_up_question,requires_electricity,active,sort_order,updated_at"
     )
     .order("sort_order", { ascending: true })
     .order("name", { ascending: true });
@@ -204,9 +206,29 @@ function NewItemForm() {
           label="Photo URL"
           name="photo_url"
           type="url"
-          className="sm:col-span-4"
+          className="sm:col-span-6"
         />
-        <label className="flex items-end gap-2 text-sm sm:col-span-2">
+
+        <Input
+          label="Follow-up question (optional)"
+          name="follow_up_question"
+          placeholder="e.g. How many people are you expecting?"
+          className="sm:col-span-6"
+        />
+        <p className="sm:col-span-6 -mt-2 text-xs text-mip-gray-500">
+          If set, users must answer this before adding the item to their
+          list. Leave empty to skip.
+        </p>
+
+        <label className="flex items-center gap-2 text-sm sm:col-span-3">
+          <input
+            type="checkbox"
+            name="requires_electricity"
+            className="h-4 w-4"
+          />
+          <span>Requires electricity</span>
+        </label>
+        <label className="flex items-center gap-2 text-sm sm:col-span-3">
           <input
             type="checkbox"
             name="active"
@@ -366,9 +388,31 @@ function EditForm({ item }: { item: Item }) {
         name="photo_url"
         type="url"
         defaultValue={item.photo_url ?? ""}
-        className="sm:col-span-4"
+        className="sm:col-span-6"
       />
-      <label className="flex items-end gap-2 text-sm sm:col-span-2">
+
+      <Input
+        label="Follow-up question (optional)"
+        name="follow_up_question"
+        defaultValue={item.follow_up_question ?? ""}
+        placeholder="e.g. How many people are you expecting?"
+        className="sm:col-span-6"
+      />
+      <p className="sm:col-span-6 -mt-2 text-xs text-mip-gray-500">
+        If set, users must answer this before adding the item to their
+        list. Leave empty to skip.
+      </p>
+
+      <label className="flex items-center gap-2 text-sm sm:col-span-3">
+        <input
+          type="checkbox"
+          name="requires_electricity"
+          defaultChecked={item.requires_electricity}
+          className="h-4 w-4"
+        />
+        <span>Requires electricity</span>
+      </label>
+      <label className="flex items-center gap-2 text-sm sm:col-span-3">
         <input
           type="checkbox"
           name="active"
