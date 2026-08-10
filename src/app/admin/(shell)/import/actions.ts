@@ -265,7 +265,7 @@ export async function runTrumbaImportAction(): Promise<
     });
 
     revalidatePath("/");
-    revalidatePath("/admin");
+    revalidatePath("/admin/events");
 
     return {
       ok: true,

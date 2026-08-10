@@ -158,9 +158,9 @@ export async function createEventAction(formData: FormData) {
 
   await logAudit(admin.id, "create", data.id, { after: payload });
 
-  revalidatePath("/admin");
+  revalidatePath("/admin/events");
   revalidatePath("/");
-  redirect("/admin");
+  redirect("/admin/events");
 }
 
 export async function updateEventAction(id: string, formData: FormData) {
@@ -189,9 +189,9 @@ export async function updateEventAction(id: string, formData: FormData) {
 
   await logAudit(admin.id, "update", id, { before, after: payload });
 
-  revalidatePath("/admin");
+  revalidatePath("/admin/events");
   revalidatePath("/");
-  redirect("/admin");
+  redirect("/admin/events");
 }
 
 export async function deleteEventAction(id: string) {
@@ -209,7 +209,7 @@ export async function deleteEventAction(id: string) {
 
   await logAudit(admin.id, "delete", id, { before });
 
-  revalidatePath("/admin");
+  revalidatePath("/admin/events");
   revalidatePath("/");
 }
 
@@ -228,6 +228,6 @@ export async function toggleFeaturedAction(id: string, isFeatured: boolean) {
     is_featured: isFeatured,
   });
 
-  revalidatePath("/admin");
+  revalidatePath("/admin/events");
   revalidatePath("/");
 }

@@ -263,7 +263,7 @@ export function EventForm({ mode, event = {}, overlays, eventTypes, action }: Pr
           {pending ? "Saving…" : mode === "create" ? "Create Event" : "Save Changes"}
         </button>
         <Link
-          href="/admin"
+          href="/admin/events"
           className="px-4 py-2 mip-button-text border border-mip-gray-300 hover:border-mip-purple"
           style={{ borderRadius: "var(--radius-button)" }}
         >
