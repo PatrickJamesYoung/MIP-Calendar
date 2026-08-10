@@ -13,7 +13,7 @@ export default async function NewEventPage() {
   return (
     <div>
       <Link
-        href="/admin"
+        href="/admin/events"
         className="text-xs text-mip-gray-500 hover:text-mip-purple"
       >
         ← Back to events

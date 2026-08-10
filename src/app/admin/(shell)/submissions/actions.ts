@@ -147,7 +147,7 @@ export async function approveSubmissionAction(
   }).catch((e) => console.error("[approve] email failed", e));
 
   revalidatePath("/admin/submissions");
-  revalidatePath("/admin");
+  revalidatePath("/admin/events");
   revalidatePath("/");
   return { ok: true, slug: newEvent.slug };
 }

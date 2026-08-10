@@ -138,7 +138,7 @@ export default async function AdminGearPage({
         className="mip-heading text-2xl mip-double-underline inline-block pb-1"
         style={{ color: "var(--color-mip-purple)" }}
       >
-        Gear
+        Requests
       </h1>
       <p className="mt-1 text-sm text-mip-gray-600">
         Reservation queue for the MIP gear library.
