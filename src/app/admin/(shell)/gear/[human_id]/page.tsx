@@ -44,6 +44,7 @@ interface Line {
   quantity: number;
   unit_contribution: number | null;
   line_full: number | null;
+  follow_up_answer: string | null;
 }
 
 interface Activity {
@@ -105,7 +106,7 @@ export default async function GearReservationDetail(props: {
   const [linesRes, activityRes] = await Promise.all([
     supabase
       .from("gear_reservation_lines")
-      .select("id,name_snapshot,category_snapshot,quantity,unit_contribution,line_full")
+      .select("id,name_snapshot,category_snapshot,quantity,unit_contribution,line_full,follow_up_answer")
       .eq("reservation_id", r.id),
     supabase
       .from("gear_activity")
@@ -170,7 +171,15 @@ export default async function GearReservationDetail(props: {
               <tbody>
                 {linesData.map((l) => (
                   <tr key={l.id} className="border-b border-neutral-100">
-                    <td className="py-2 pr-4">{l.name_snapshot}</td>
+                    <td className="py-2 pr-4">
+                      <div>{l.name_snapshot}</div>
+                      {l.follow_up_answer && (
+                        <div className="mt-1 text-xs text-neutral-600">
+                          <span className="text-neutral-500">Note: </span>
+                          {l.follow_up_answer}
+                        </div>
+                      )}
+                    </td>
                     <td className="py-2 pr-4 text-neutral-600">
                       {l.category_snapshot ?? "—"}
                     </td>

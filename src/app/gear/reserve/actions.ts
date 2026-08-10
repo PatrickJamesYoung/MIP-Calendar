@@ -31,6 +31,18 @@ export async function submitReservationAction(
 ): Promise<SubmitResult> {
   // ---- 1. Parse + validate form ------------------------------------------
   const raw = Object.fromEntries(formData.entries()) as Record<string, string>;
+
+  // Pull follow-up answers out of the raw record so they don't confuse Zod
+  // (their keys are dynamic: follow_up_answer__<slug>).
+  const followUpAnswers = new Map<string, string>();
+  for (const [key, value] of Object.entries(raw)) {
+    if (!key.startsWith("follow_up_answer__")) continue;
+    const slug = key.slice("follow_up_answer__".length).toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(slug)) continue;
+    const trimmed = (value ?? "").toString().trim().slice(0, 500);
+    if (trimmed) followUpAnswers.set(slug, trimmed);
+  }
+
   const parsed = reserveSchema.safeParse(raw);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
@@ -118,11 +130,13 @@ export async function submitReservationAction(
   const bySlug = new Map((itemsData ?? []).map((it) => [it.slug, it]));
 
   interface ResolvedLine {
+    slug: string;
     item_id: string;
     name_snapshot: string;
     quantity: number;
     unit_contribution: number;
     line_full: number;
+    follow_up_answer: string | null;
   }
   const lines: ResolvedLine[] = [];
   for (const entry of cartEntries) {
@@ -136,11 +150,13 @@ export async function submitReservationAction(
     const qty = Math.max(1, Math.min(entry.quantity, it.quantity_total));
     const unit = Number(it.suggested_contribution ?? 0);
     lines.push({
+      slug: it.slug,
       item_id: it.id,
       name_snapshot: it.name,
       quantity: qty,
       unit_contribution: unit,
       line_full: qty * unit,
+      follow_up_answer: followUpAnswers.get(it.slug) ?? null,
     });
   }
 
@@ -189,6 +205,7 @@ export async function submitReservationAction(
       quantity: l.quantity,
       unit_contribution: l.unit_contribution,
       line_full: l.line_full,
+      follow_up_answer: l.follow_up_answer,
     }))
   );
   if (linesErr) {

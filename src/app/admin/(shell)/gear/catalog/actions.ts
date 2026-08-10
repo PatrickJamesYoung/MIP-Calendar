@@ -69,6 +69,8 @@ export async function createGearItem(formData: FormData) {
     photo_url: stringField(formData, "photo_url"),
     active: formData.get("active") === "on",
     sort_order: numberField(formData, "sort_order", { min: 0 }) ?? 0,
+    follow_up_question: stringField(formData, "follow_up_question", { max: 500 }),
+    requires_electricity: formData.get("requires_electricity") === "on",
   };
 
   const { error } = await supabase.from("gear_items").insert(patch);
@@ -90,6 +92,7 @@ export async function updateGearItem(formData: FormData) {
     ["short_description", { max: 400 }],
     ["how_to_use_url", undefined],
     ["photo_url", undefined],
+    ["follow_up_question", { max: 500 }],
   ];
   for (const [f, opts] of stringFields) {
     if (formData.has(f)) patch[f] = stringField(formData, f, opts);
@@ -102,8 +105,10 @@ export async function updateGearItem(formData: FormData) {
   if (formData.has("unit")) patch.unit = unitField(formData);
   if (formData.has("sort_order"))
     patch.sort_order = numberField(formData, "sort_order", { min: 0 }) ?? 0;
-  // "active" is a checkbox: absent = false, "on" = true. We include it every time.
+  // Checkboxes: absent = false, "on" = true. Include every time so the form
+  // can uncheck as well as check.
   patch.active = formData.get("active") === "on";
+  patch.requires_electricity = formData.get("requires_electricity") === "on";
   patch.updated_at = new Date().toISOString();
 
   const { error } = await supabase.from("gear_items").update(patch).eq("id", id);

@@ -14,6 +14,7 @@ interface Item {
   unit: "per_event" | "per_day";
   category: string | null;
   active: boolean;
+  requires_electricity: boolean;
 }
 
 interface Setting {
@@ -35,10 +36,14 @@ function parseTier(raw: string | undefined): Tier {
 export default async function ReservePage({
   searchParams,
 }: {
-  searchParams: Promise<{ items?: string; tier?: string }>;
+  searchParams: Promise<{
+    items?: string;
+    tier?: string;
+    answers?: string;
+  }>;
 }) {
   const params = await searchParams;
-  const cart = parseCart(params.items);
+  const cart = parseCart(params.items, params.answers);
   const initialTier = parseTier(params.tier);
 
   const supabase = await createClient();
@@ -49,7 +54,7 @@ export default async function ReservePage({
       ? supabase
           .from("gear_items")
           .select(
-            "id,slug,name,quantity_total,suggested_contribution,unit,category,active"
+            "id,slug,name,quantity_total,suggested_contribution,unit,category,active,requires_electricity"
           )
           .in("slug", slugs)
       : Promise.resolve({ data: [], error: null }),
@@ -72,7 +77,7 @@ export default async function ReservePage({
 
   // Reconcile cart with catalog: drop unknown slugs, clamp qty to inventory
   const reconciled = cart
-    .map(({ slug, quantity }) => {
+    .map(({ slug, quantity, followUpAnswer }) => {
       const it = itemsBySlug.get(slug);
       if (!it) return null;
       const q = Math.max(1, Math.min(quantity, it.quantity_total));
@@ -80,6 +85,7 @@ export default async function ReservePage({
         item: it,
         quantity: q,
         line_full: q * Number(it.suggested_contribution ?? 0),
+        followUpAnswer: followUpAnswer ?? null,
       };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -142,6 +148,8 @@ export default async function ReservePage({
             unitContribution: Number(l.item.suggested_contribution ?? 0),
             lineFull: l.line_full,
             category: l.item.category,
+            requiresElectricity: l.item.requires_electricity,
+            followUpAnswer: l.followUpAnswer,
           }))}
           subtotal={subtotal}
           minNoticeHours={minNoticeHours}

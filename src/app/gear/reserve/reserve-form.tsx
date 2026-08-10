@@ -14,6 +14,25 @@ interface Line {
   unitContribution: number;
   lineFull: number;
   category: string | null;
+  requiresElectricity: boolean;
+  followUpAnswer: string | null;
+}
+
+// True when the request includes at least one item that needs power
+// and doesn't include a battery/generator to run it on.
+function needsBatteryGeneratorWarning(lines: Line[]): boolean {
+  const anyRequires = lines.some((l) => l.requiresElectricity);
+  if (!anyRequires) return false;
+  const hasGenerator = lines.some((l) => {
+    const name = l.name.toLowerCase();
+    const slug = l.slug.toLowerCase();
+    return (
+      slug.includes("generator") ||
+      name.includes("battery generator") ||
+      name.includes("generator")
+    );
+  });
+  return !hasGenerator;
 }
 
 interface Props {
@@ -81,6 +100,11 @@ export function ReserveForm(props: Props) {
   const [pickupDefault, setPickupDefault] = useState<string>("");
   const [returnDefault, setReturnDefault] = useState<string>("");
   const [tier, setTier] = useState<"full" | "mid" | "low">(initialTier);
+
+  const showElectricityWarning = needsBatteryGeneratorWarning(lines);
+  const followUpLines = lines.filter(
+    (l) => l.followUpAnswer && l.followUpAnswer.trim() !== ""
+  );
 
   useEffect(() => {
     // Compute defaults on client to avoid SSR/CSR time drift
@@ -201,6 +225,12 @@ export function ReserveForm(props: Props) {
                         {l.category}
                       </div>
                     )}
+                    {l.followUpAnswer && (
+                      <div className="mt-1 text-xs text-mip-gray-600">
+                        <span className="text-mip-gray-500">Note: </span>
+                        {l.followUpAnswer}
+                      </div>
+                    )}
                   </td>
                   <td className="text-right px-4 py-2 tabular-nums">
                     {l.quantity}
@@ -229,6 +259,43 @@ export function ReserveForm(props: Props) {
             </tfoot>
           </table>
         </section>
+
+        {/* Hidden inputs so the server action receives follow-up answers */}
+        {followUpLines.map((l) => (
+          <input
+            key={l.slug}
+            type="hidden"
+            name={`follow_up_answer__${l.slug}`}
+            value={l.followUpAnswer ?? ""}
+          />
+        ))}
+
+        {showElectricityWarning && (
+          <div
+            role="alert"
+            className="rounded-lg border border-amber-300 bg-amber-50 p-4"
+          >
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-900">
+                <p className="font-semibold">Heads up — you may need power</p>
+                <p className="mt-1 leading-relaxed">
+                  Your request includes gear that requires electricity to
+                  operate but you didn’t request a battery generator. If
+                  you’re planning on using this gear in a location without
+                  access to power, consider{" "}
+                  <Link
+                    href="/gear"
+                    className="underline hover:text-amber-950"
+                  >
+                    adding a battery generator
+                  </Link>{" "}
+                  to your request.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Requester */}
         <Section title="About you">
