@@ -135,12 +135,11 @@ export default async function AdminWikiIndexPage({
                         </span>
                       </div>
                       {p.snippet ? (
-                        // ts_headline emits <b>...</b> around matches. Safe:
-                        // the RPC only ever runs against admin-authored
-                        // wiki bodies, and any HTML in those bodies would
-                        // already have been shown to admins by WikiMarkdown
-                        // (which itself does not honor raw HTML). Rendering
-                        // this snippet as HTML lets us show the highlights.
+                        // The wiki_search RPC strips HTML tags from bodies
+                        // before ts_headline runs, then ts_headline wraps
+                        // matches in <b>...</b>. The only markup the client
+                        // ever receives is those <b> tags, so this is safe
+                        // to render as HTML.
                         <p
                           className="mt-1 text-sm text-mip-gray-700 line-clamp-2 [&_b]:font-bold [&_b]:text-mip-purple"
                           dangerouslySetInnerHTML={{ __html: p.snippet }}
