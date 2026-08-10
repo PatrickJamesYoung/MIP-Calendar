@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import Script from "next/script";
 import Link from "next/link";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
@@ -101,6 +101,9 @@ export function ReserveForm(props: Props) {
   const [returnDefault, setReturnDefault] = useState<string>("");
   const [tier, setTier] = useState<"full" | "mid" | "low">(initialTier);
 
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
+
   const showElectricityWarning = needsBatteryGeneratorWarning(lines);
   const followUpLines = lines.filter(
     (l) => l.followUpAnswer && l.followUpAnswer.trim() !== ""
@@ -113,15 +116,73 @@ export function ReserveForm(props: Props) {
     setReturnDefault(nextHourNyDatetimeLocal(noticeOffset + 24));
   }, [minNoticeHours]);
 
-  // Turnstile setup
+  // Turnstile setup — explicit render so React re-renders can't clobber it.
+  //
+  // We deliberately do NOT rely on Turnstile's auto-render (`.cf-turnstile`
+  // divs scanned on script load). Auto-render races against React's initial
+  // effect pass: Turnstile calls `render()` and gets a widget id, but a
+  // follow-up React reconcile can detach the container before the widget
+  // iframe is mounted, leaving a stub div with no iframe inside.
   useEffect(() => {
     if (!turnstileSiteKey) return;
-    const w = window as unknown as {
-      onGearTurnstileSuccess?: (token: string) => void;
-    };
-    w.onGearTurnstileSuccess = (token: string) => setTurnstileToken(token);
+    const sitekey = turnstileSiteKey;
+
+    let cancelled = false;
+
+    function mountWidget() {
+      if (cancelled) return;
+      const w = window as unknown as {
+        turnstile?: {
+          render: (
+            el: HTMLElement,
+            opts: {
+              sitekey: string;
+              callback?: (token: string) => void;
+              "expired-callback"?: () => void;
+              "error-callback"?: () => void;
+            }
+          ) => string;
+          remove: (id: string) => void;
+          ready?: (cb: () => void) => void;
+        };
+      };
+      const container = turnstileContainerRef.current;
+      if (!w.turnstile || !container) {
+        // Script hasn't loaded yet — poll briefly.
+        setTimeout(mountWidget, 100);
+        return;
+      }
+      // Guard against double-render from strict mode.
+      if (turnstileWidgetIdRef.current) return;
+      try {
+        const id = w.turnstile.render(container, {
+          sitekey,
+          callback: (token: string) => setTurnstileToken(token),
+          "expired-callback": () => setTurnstileToken(null),
+          "error-callback": () => setTurnstileToken(null),
+        });
+        turnstileWidgetIdRef.current = id;
+      } catch (e) {
+        console.warn("[turnstile] render failed:", (e as Error).message);
+      }
+    }
+
+    mountWidget();
+
     return () => {
-      w.onGearTurnstileSuccess = undefined;
+      cancelled = true;
+      const w = window as unknown as {
+        turnstile?: { remove: (id: string) => void };
+      };
+      const id = turnstileWidgetIdRef.current;
+      if (w.turnstile && id) {
+        try {
+          w.turnstile.remove(id);
+        } catch {
+          // ignore
+        }
+      }
+      turnstileWidgetIdRef.current = null;
     };
   }, [turnstileSiteKey]);
 
@@ -185,7 +246,7 @@ export function ReserveForm(props: Props) {
     <>
       {turnstileSiteKey && (
         <Script
-          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
           strategy="afterInteractive"
           async
           defer
@@ -429,11 +490,7 @@ export function ReserveForm(props: Props) {
 
           {turnstileSiteKey && (
             <div className="mt-4">
-              <div
-                className="cf-turnstile"
-                data-sitekey={turnstileSiteKey}
-                data-callback="onGearTurnstileSuccess"
-              />
+              <div ref={turnstileContainerRef} />
             </div>
           )}
         </Section>
