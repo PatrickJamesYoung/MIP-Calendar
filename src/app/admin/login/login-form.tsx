@@ -19,6 +19,15 @@ export function LoginForm({ redirectTo }: Props) {
   async function handleGoogle() {
     setLoading(true);
     setMessage(null);
+    // Stash the post-login destination in a cookie so the callback can
+    // recover it even if Supabase/Google strip extra query params from
+    // our redirect URL. Cookie is Lax so it survives the top-level
+    // redirect back from Google.
+    if (redirectTo && redirectTo.startsWith("/")) {
+      document.cookie = `mip_admin_redirect=${encodeURIComponent(
+        redirectTo
+      )}; Path=/; Max-Age=600; SameSite=Lax`;
+    }
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {

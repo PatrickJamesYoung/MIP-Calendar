@@ -40,11 +40,11 @@ interface Reservation {
 interface Line {
   id: string;
   name_snapshot: string;
-  category_snapshot: string | null;
   quantity: number;
   unit_contribution: number | null;
   line_full: number | null;
   follow_up_answer: string | null;
+  gear_items: { category: string | null }[] | { category: string | null } | null;
 }
 
 interface Activity {
@@ -66,6 +66,13 @@ function formatDate(iso: string): string {
     timeZone: "America/New_York",
     timeZoneName: "short",
   });
+}
+
+function lineCategory(l: Line): string | null {
+  const gi = l.gear_items;
+  if (!gi) return null;
+  if (Array.isArray(gi)) return gi[0]?.category ?? null;
+  return gi.category ?? null;
 }
 
 function statusBadge(status: Status) {
@@ -106,7 +113,9 @@ export default async function GearReservationDetail(props: {
   const [linesRes, activityRes] = await Promise.all([
     supabase
       .from("gear_reservation_lines")
-      .select("id,name_snapshot,category_snapshot,quantity,unit_contribution,line_full,follow_up_answer")
+      .select(
+        "id,name_snapshot,quantity,unit_contribution,line_full,follow_up_answer,gear_items(category)"
+      )
       .eq("reservation_id", r.id),
     supabase
       .from("gear_activity")
@@ -181,7 +190,7 @@ export default async function GearReservationDetail(props: {
                       )}
                     </td>
                     <td className="py-2 pr-4 text-neutral-600">
-                      {l.category_snapshot ?? "—"}
+                      {lineCategory(l) ?? "—"}
                     </td>
                     <td className="py-2 pr-4 text-right tabular-nums">
                       {l.quantity}
