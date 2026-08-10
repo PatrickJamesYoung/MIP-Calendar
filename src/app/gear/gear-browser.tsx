@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Minus, Plus, ShoppingCart, Search, X } from "lucide-react";
 
 interface Item {
@@ -36,10 +37,21 @@ const ALL_CATEGORIES = "__all__";
 const UNCATEGORIZED = "Other";
 
 export function GearBrowser({ items, tierLabels, tierMultipliers }: Props) {
-  const [cart, setCart] = useState<Record<string, CartLine>>({});
+  const searchParams = useSearchParams();
+
+  // Hydrate cart + tier from URL so returning from /gear/reserve preserves
+  // what the user had picked. Reserve page's "Edit" link points back here
+  // with the same query string it used to reach the reservation.
+  const [cart, setCart] = useState<Record<string, CartLine>>(() =>
+    hydrateCartFromParams(searchParams, items)
+  );
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
-  const [tier, setTier] = useState<Tier>("mid");
+  const [tier, setTier] = useState<Tier>(() => {
+    const t = searchParams?.get("tier");
+    if (t === "full" || t === "mid" || t === "low") return t;
+    return "full";
+  });
   const [openItem, setOpenItem] = useState<Item | null>(null);
 
   const multiplier = tierMultipliers[tier] ?? 1;
@@ -186,7 +198,7 @@ export function GearBrowser({ items, tierLabels, tierMultipliers }: Props) {
         {grouped.map(([cat, catItems]) => (
           <section key={cat}>
             <h2
-              className="mb-3 text-xs font-semibold uppercase tracking-wider text-mip-gray-500 border-b border-mip-gray-200 pb-1"
+              className="mb-4 text-xl font-bold text-mip-gray-900 border-b border-mip-gray-200 pb-2"
             >
               {cat}
             </h2>
@@ -558,4 +570,46 @@ function ItemModal({
       </div>
     </div>
   );
+}
+
+// URL hydration helpers ---------------------------------------------------
+//
+// Matches the reserve page's parser: cart is ?items=slug:qty,slug:qty
+// and answers are ?answers=slug|text;slug|text
+function hydrateCartFromParams(
+  params: URLSearchParams | null,
+  items: Item[]
+): Record<string, CartLine> {
+  if (!params) return {};
+  const rawItems = params.get("items");
+  if (!rawItems) return {};
+
+  const bySlug = new Map(items.map((it) => [it.slug, it]));
+  const rawAnswers = params.get("answers") ?? "";
+  const answerMap = new Map<string, string>();
+  for (const chunk of rawAnswers.split(";")) {
+    const idx = chunk.indexOf("|");
+    if (idx <= 0) continue;
+    const slug = chunk.slice(0, idx).trim();
+    const answer = chunk.slice(idx + 1).trim();
+    if (slug && answer) answerMap.set(slug, answer.slice(0, 500));
+  }
+
+  const cart: Record<string, CartLine> = {};
+  for (const chunk of rawItems.split(",")) {
+    const [slug, qtyRaw] = chunk.split(":");
+    if (!slug) continue;
+    const item = bySlug.get(slug.trim());
+    if (!item) continue;
+    const qty = Number.parseInt(qtyRaw ?? "0", 10);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    const clamped = Math.min(qty, item.quantity_total);
+    if (clamped <= 0) continue;
+    const answer = answerMap.get(slug.trim());
+    cart[item.slug] = {
+      qty: clamped,
+      ...(answer ? { followUpAnswer: answer } : {}),
+    };
+  }
+  return cart;
 }

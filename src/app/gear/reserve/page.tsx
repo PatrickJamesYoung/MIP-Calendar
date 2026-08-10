@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { ReserveForm } from "./reserve-form";
 import { parseCart } from "./cart";
+import { EmbedResizer } from "../embed-resizer";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ type Tier = "full" | "mid" | "low";
 
 function parseTier(raw: string | undefined): Tier {
   if (raw === "full" || raw === "mid" || raw === "low") return raw;
-  return "mid";
+  return "full";
 }
 
 export default async function ReservePage({
@@ -65,7 +66,6 @@ export default async function ReservePage({
         "organization_name",
         "tentative_disclaimer",
         "min_notice_hours",
-        "default_pickup_location",
         "tier_full_label",
         "tier_mid_label",
         "tier_low_label",
@@ -97,7 +97,6 @@ export default async function ReservePage({
   const orgName = (s.get("organization_name") as string) ?? "MIP";
   const tentativeDisclaimer = s.get("tentative_disclaimer") as string | undefined;
   const minNoticeHours = (s.get("min_notice_hours") as number | undefined) ?? 48;
-  const defaultPickupLocation = (s.get("default_pickup_location") as string) ?? "";
   const tierLabels = {
     full: (s.get("tier_full_label") as string) ?? "Well-resourced organization",
     mid: (s.get("tier_mid_label") as string) ?? "Small organization or coalition",
@@ -108,6 +107,7 @@ export default async function ReservePage({
 
   return (
     <main className="mx-auto w-full px-6 py-8" style={{ maxWidth: "820px" }}>
+      <EmbedResizer />
       <div className="text-sm mb-4">
         <Link
           href="/gear"
@@ -154,7 +154,6 @@ export default async function ReservePage({
           subtotal={subtotal}
           minNoticeHours={minNoticeHours}
           tentativeDisclaimer={tentativeDisclaimer}
-          defaultPickupLocation={defaultPickupLocation}
           tierLabels={tierLabels}
           initialTier={initialTier}
           turnstileSiteKey={turnstileSiteKey}

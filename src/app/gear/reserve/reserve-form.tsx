@@ -41,7 +41,6 @@ interface Props {
   subtotal: number;
   minNoticeHours: number;
   tentativeDisclaimer?: string;
-  defaultPickupLocation: string;
   tierLabels: { full: string; mid: string; low: string };
   initialTier: "full" | "mid" | "low";
   turnstileSiteKey: string | null;
@@ -88,7 +87,6 @@ export function ReserveForm(props: Props) {
     subtotal,
     minNoticeHours,
     tentativeDisclaimer,
-    defaultPickupLocation,
     tierLabels,
     initialTier,
     turnstileSiteKey,
@@ -108,6 +106,22 @@ export function ReserveForm(props: Props) {
   const followUpLines = lines.filter(
     (l) => l.followUpAnswer && l.followUpAnswer.trim() !== ""
   );
+
+  // Preserve the current cart when returning to /gear so items aren't lost.
+  // Mirrors the URL shape GearBrowser reads (items=slug:qty,...;answers=slug|text;...).
+  const editGearUrl = (() => {
+    if (lines.length === 0) return "/gear";
+    const itemsParam = lines
+      .map((l) => `${l.slug}:${l.quantity}`)
+      .join(",");
+    const answersParam = lines
+      .filter((l) => l.followUpAnswer && l.followUpAnswer.trim())
+      .map((l) => `${l.slug}|${l.followUpAnswer!.trim().slice(0, 500)}`)
+      .join(";");
+    const params = new URLSearchParams({ items: itemsParam, tier });
+    if (answersParam) params.set("answers", answersParam);
+    return `/gear?${params.toString()}`;
+  })();
 
   useEffect(() => {
     // Compute defaults on client to avoid SSR/CSR time drift
@@ -261,7 +275,7 @@ export function ReserveForm(props: Props) {
               Requested items
             </h2>
             <Link
-              href="/gear"
+              href={editGearUrl}
               className="text-xs text-mip-gray-500 hover:text-mip-purple hover:underline"
             >
               Edit
@@ -346,7 +360,7 @@ export function ReserveForm(props: Props) {
                   you’re planning on using this gear in a location without
                   access to power, consider{" "}
                   <Link
-                    href="/gear"
+                    href={editGearUrl}
                     className="underline hover:text-amber-950"
                   >
                     adding a battery generator
@@ -453,18 +467,11 @@ export function ReserveForm(props: Props) {
             <strong>{minNoticeHours} hours</strong> of notice.
           </p>
 
-          <div className="mt-4">
-            <TextField
-              label="Pickup location"
-              name="pickup_location"
-              defaultValue={defaultPickupLocation}
-              placeholder="If different from the default"
-            />
-            <p className="mt-2 text-xs text-mip-gray-500">
-              The name and phone you gave above are what we'll use to
-              reach you on-site — no separate contact needed.
-            </p>
-          </div>
+          <p className="mt-3 text-xs text-mip-gray-500">
+            The name and phone you gave above are what we'll use to reach
+            you on-site — no separate contact needed. Pickup details will be
+            included in your confirmation email.
+          </p>
         </Section>
 
         {/* Confirm */}
