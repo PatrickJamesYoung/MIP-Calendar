@@ -290,25 +290,29 @@ textarea.mip-input {
 /* ============================================
    CALENDAR TYPOGRAPHY SCALE
    ============================================
-   Bumps text sizes ~50% inside the calendar shell without inflating
+   Bumps text sizes 25% inside the calendar shell without inflating
    Tailwind spacing utilities (p-*, gap-*, mb-*, etc.). Tailwind text-*
    classes are defined in rem, so overriding them directly under
    .calendar-scaled leaves spacing untouched and only affects
    typography.
 
+   History:
+   - 2026-07-17: bumped ~50% (×1.5) — too big on desktop review 2026-08-10
+   - 2026-08-10: dialed back to ×1.25 (Option B from side-by-side previews)
+
    Scoped to the calendar <main> only — does NOT affect site header,
    footer, admin, submit form, or the featured bar (which sits above
    .calendar-scaled). */
-.calendar-scaled .text-xs   { font-size: 1.125rem; line-height: 1.5rem; }   /* 12 → 18 */
-.calendar-scaled .text-sm   { font-size: 1.3125rem; line-height: 1.75rem; } /* 14 → 21 */
-.calendar-scaled .text-base { font-size: 1.5rem; line-height: 2rem; }       /* 16 → 24 */
-.calendar-scaled .text-lg   { font-size: 1.6875rem; line-height: 2.25rem; } /* 18 → 27 */
-.calendar-scaled .text-xl   { font-size: 1.875rem; line-height: 2.25rem; }  /* 20 → 30 */
-.calendar-scaled .text-2xl  { font-size: 2.25rem; line-height: 2.5rem; }    /* 24 → 36 */
-.calendar-scaled .text-3xl  { font-size: 2.8125rem; line-height: 1; }       /* 30 → 45 */
-.calendar-scaled .text-4xl  { font-size: 3.375rem; line-height: 1; }        /* 36 → 54 */
+.calendar-scaled .text-xs   { font-size: 0.9375rem; line-height: 1.375rem; } /* 12 → 15 */
+.calendar-scaled .text-sm   { font-size: 1.09375rem; line-height: 1.5rem; }  /* 14 → 17.5 */
+.calendar-scaled .text-base { font-size: 1.25rem; line-height: 1.75rem; }    /* 16 → 20 */
+.calendar-scaled .text-lg   { font-size: 1.40625rem; line-height: 2rem; }    /* 18 → 22.5 */
+.calendar-scaled .text-xl   { font-size: 1.5625rem; line-height: 2rem; }     /* 20 → 25 */
+.calendar-scaled .text-2xl  { font-size: 1.875rem; line-height: 2.25rem; }   /* 24 → 30 */
+.calendar-scaled .text-3xl  { font-size: 2.34375rem; line-height: 1; }       /* 30 → 37.5 */
+.calendar-scaled .text-4xl  { font-size: 2.8125rem; line-height: 1; }        /* 36 → 45 */
 
 /* Also bump inline-styled utility classes that appear inside the shell. */
-.calendar-scaled .mip-nav-text      { font-size: 1.35rem; }       /* 0.9 → 1.35 */
-.calendar-scaled .mip-priority-badge { font-size: 1.05rem; padding: 4px 10px; } /* 0.7 → 1.05 */
-.calendar-scaled .mip-eyebrow       { font-size: 1.05rem; }       /* 0.75 → 1.05 */
+.calendar-scaled .mip-nav-text      { font-size: 1.125rem; }       /* 0.9 → 1.125 */
+.calendar-scaled .mip-priority-badge { font-size: 0.875rem; padding: 3px 8px; } /* 0.7 → 0.875 */
+.calendar-scaled .mip-eyebrow       { font-size: 0.9375rem; }     /* 0.75 → 0.9375 */
