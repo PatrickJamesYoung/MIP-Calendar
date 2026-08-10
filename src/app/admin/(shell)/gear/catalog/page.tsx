@@ -7,6 +7,7 @@ import {
   toggleGearItemActive,
   deleteGearItem,
 } from "./actions";
+import { PhotoField } from "./photo-field";
 
 export const dynamic = "force-dynamic";
 
@@ -202,12 +203,7 @@ function NewItemForm() {
           type="url"
           className="sm:col-span-3"
         />
-        <Input
-          label="Photo URL"
-          name="photo_url"
-          type="url"
-          className="sm:col-span-6"
-        />
+        <PhotoField className="sm:col-span-6" />
 
         <Input
           label="Follow-up question (optional)"
@@ -383,13 +379,7 @@ function EditForm({ item }: { item: Item }) {
         defaultValue={item.how_to_use_url ?? ""}
         className="sm:col-span-3"
       />
-      <Input
-        label="Photo URL"
-        name="photo_url"
-        type="url"
-        defaultValue={item.photo_url ?? ""}
-        className="sm:col-span-6"
-      />
+      <PhotoField defaultValue={item.photo_url} className="sm:col-span-6" />
 
       <Input
         label="Follow-up question (optional)"

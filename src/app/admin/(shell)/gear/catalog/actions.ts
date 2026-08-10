@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { uploadGearImage } from "@/lib/gear-storage";
 
 const ALLOWED_UNITS = ["per_event", "per_day"] as const;
 type Unit = (typeof ALLOWED_UNITS)[number];
@@ -141,4 +142,46 @@ export async function deleteGearItem(formData: FormData) {
   if (error) throw new Error(`Failed to delete item: ${error.message}`);
 
   revalidatePath("/admin/gear/catalog");
+}
+
+export type UploadGearImageResult =
+  | { ok: true; url: string }
+  | { ok: false; error: string };
+
+/**
+ * Upload a gear item photo. Called from a client component via a form
+ * action. Returns the public URL on success so the caller can write it
+ * into the photo_url text field. Does not persist anything to gear_items
+ * on its own — the URL is saved via the normal create/update flow.
+ */
+export async function uploadGearImageAction(
+  _prev: UploadGearImageResult | null,
+  formData: FormData
+): Promise<UploadGearImageResult> {
+  try {
+    await requireAdmin();
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false, error: "No file selected." };
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      return { ok: false, error: "Image is larger than 5\u00A0MB." };
+    }
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowed.includes(file.type)) {
+      return {
+        ok: false,
+        error: "Unsupported file type. Use JPG, PNG, WEBP, or GIF.",
+      };
+    }
+    // Scope path by slug when the form provides one, else by a generic label.
+    const scope =
+      (formData.get("slug") as string | null)?.trim() ||
+      (formData.get("name") as string | null)?.trim() ||
+      "upload";
+    const url = await uploadGearImage(file, scope);
+    return { ok: true, url };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
 }

@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { GearBrowser } from "./gear-browser";
+import { EmbedResizer } from "./embed-resizer";
 
 export const dynamic = "force-dynamic";
 
@@ -71,11 +73,14 @@ export default async function GearIndexPage() {
 
   return (
     <main className="mx-auto w-full px-6 py-8" style={{ maxWidth: "1120px" }}>
-      <GearBrowser
-        items={items}
-        tierLabels={tierLabels}
-        tierMultipliers={tierMultipliers}
-      />
+      <EmbedResizer />
+      <Suspense fallback={null}>
+        <GearBrowser
+          items={items}
+          tierLabels={tierLabels}
+          tierMultipliers={tierMultipliers}
+        />
+      </Suspense>
     </main>
   );
 }
