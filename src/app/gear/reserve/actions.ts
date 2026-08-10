@@ -18,8 +18,6 @@ const reserveSchema = z.object({
   pickup_at: z.string().min(1),
   return_at: z.string().min(1),
   pickup_location: z.string().max(300).optional().or(z.literal("")),
-  organizer_contact_name: z.string().max(200).optional().or(z.literal("")),
-  organizer_contact_phone: z.string().max(40).optional().or(z.literal("")),
   acknowledged_tentative: z.literal("true"),
   cart: z.string().min(1).max(2000),
 });
@@ -167,8 +165,6 @@ export async function submitReservationAction(
       pickup_at: pickup.toISOString(),
       return_at: rtn.toISOString(),
       pickup_location: v.pickup_location?.trim() || null,
-      organizer_contact_name: v.organizer_contact_name?.trim() || null,
-      organizer_contact_phone: v.organizer_contact_phone?.trim() || null,
       subtotal_full: subtotalFull,
       contribution_multiplier: multiplier,
       contribution_total: contributionTotal,

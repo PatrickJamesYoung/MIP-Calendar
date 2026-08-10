@@ -2,16 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  approveReservation,
-  denyReservation,
-  markPickedUp,
-  markReturned,
-  sendFollowup,
-  resendTemplate,
-  cancelReservation,
-  updateReservationFields,
-} from "./actions";
+import { updateReservationFields } from "./actions";
+import { ReservationActions } from "./reservation-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -36,8 +28,6 @@ interface Reservation {
   pickup_at: string;
   return_at: string;
   pickup_location: string | null;
-  organizer_contact_name: string | null;
-  organizer_contact_phone: string | null;
   subtotal_full: number | null;
   contribution_multiplier: number | null;
   contribution_total: number | null;
@@ -79,12 +69,12 @@ function formatDate(iso: string): string {
 
 function statusBadge(status: Status) {
   const map: Record<Status, { label: string; className: string }> = {
-    tentative:   { label: "Tentative",  className: "bg-amber-100 text-amber-900 border-amber-300" },
-    approved:    { label: "Approved",   className: "bg-emerald-100 text-emerald-900 border-emerald-300" },
-    denied:      { label: "Denied",     className: "bg-rose-100 text-rose-900 border-rose-300" },
-    picked_up:   { label: "Picked up",  className: "bg-sky-100 text-sky-900 border-sky-300" },
-    returned:    { label: "Returned",   className: "bg-slate-100 text-slate-900 border-slate-300" },
-    cancelled:   { label: "Cancelled",  className: "bg-neutral-100 text-neutral-700 border-neutral-300" },
+    tentative: { label: "Tentative", className: "bg-amber-100 text-amber-900 border-amber-300" },
+    approved: { label: "Approved", className: "bg-emerald-100 text-emerald-900 border-emerald-300" },
+    denied: { label: "Denied", className: "bg-rose-100 text-rose-900 border-rose-300" },
+    picked_up: { label: "Picked up", className: "bg-sky-100 text-sky-900 border-sky-300" },
+    returned: { label: "Returned", className: "bg-slate-100 text-slate-900 border-slate-300" },
+    cancelled: { label: "Cancelled", className: "bg-neutral-100 text-neutral-700 border-neutral-300" },
   };
   const s = map[status] ?? map.tentative;
   return (
@@ -144,7 +134,9 @@ export default async function GearReservationDetail(props: {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="mb-2 flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">{r.human_id}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {r.human_id}
+            </h1>
             {statusBadge(r.status)}
           </div>
           <p className="text-sm text-neutral-600">
@@ -153,7 +145,12 @@ export default async function GearReservationDetail(props: {
             {formatDate(r.created_at)}
           </p>
         </div>
-        <ActionBar reservation={r} />
+        <ReservationActions
+          reservationId={r.id}
+          humanId={r.human_id}
+          status={r.status}
+          requesterEmail={r.requester_email}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -217,9 +214,9 @@ export default async function GearReservationDetail(props: {
           <NotesPanel r={r} />
         </div>
 
-        {/* RIGHT: requester + activity */}
+        {/* RIGHT: organizer + activity */}
         <div className="space-y-6">
-          <Panel title="Requester">
+          <Panel title="Organizer">
             <dl className="space-y-2 text-sm">
               <Row label="Name" value={r.requester_name} />
               <Row
@@ -233,7 +230,9 @@ export default async function GearReservationDetail(props: {
                   </a>
                 }
               />
-              {r.requester_phone && <Row label="Phone" value={r.requester_phone} />}
+              {r.requester_phone && (
+                <Row label="Phone" value={r.requester_phone} />
+              )}
               {r.organization && <Row label="Org" value={r.organization} />}
               {r.org_tier && (
                 <Row
@@ -254,7 +253,10 @@ export default async function GearReservationDetail(props: {
             ) : (
               <ul className="space-y-3 text-sm">
                 {activityData.map((a) => (
-                  <li key={a.id} className="border-l-2 border-neutral-200 pl-3">
+                  <li
+                    key={a.id}
+                    className="border-l-2 border-neutral-200 pl-3"
+                  >
                     <div className="font-medium">{actionLabel(a.action)}</div>
                     <div className="text-xs text-neutral-500">
                       {a.actor_email ?? "system"} · {formatDate(a.created_at)}
@@ -265,8 +267,6 @@ export default async function GearReservationDetail(props: {
               </ul>
             )}
           </Panel>
-
-          <ResendPanel r={r} />
         </div>
       </div>
     </div>
@@ -314,6 +314,7 @@ function actionLabel(action: string): string {
     picked_up: "Marked picked up",
     returned: "Marked returned",
     cancelled: "Cancelled",
+    status_changed: "Status changed",
     email_sent: "Email sent",
     email_resent: "Email resent",
     fields_updated: "Fields updated",
@@ -326,11 +327,15 @@ function ActivityDetail({ detail }: { detail: Record<string, unknown> }) {
   const template = detail.template as string | undefined;
   const reason = detail.reason as string | undefined;
   const fields = detail.fields as string[] | undefined;
+  const status = detail.status as string | undefined;
 
   const parts: string[] = [];
+  if (status) parts.push(`→ ${status}`);
   if (template) parts.push(`template: ${template}`);
   if (email) {
-    parts.push(email.ok ? "email sent ✓" : `email failed: ${email.error ?? "unknown"}`);
+    parts.push(
+      email.ok ? "email sent ✓" : `email failed: ${email.error ?? "unknown"}`
+    );
   }
   if (reason) parts.push(`reason: ${reason}`);
   if (fields) parts.push(`fields: ${fields.join(", ")}`);
@@ -341,127 +346,15 @@ function ActivityDetail({ detail }: { detail: Record<string, unknown> }) {
   );
 }
 
-// ─────────────── Action bar ───────────────
-
-function ActionBar({ reservation }: { reservation: Reservation }) {
-  const idFields = (
-    <>
-      <input type="hidden" name="reservation_id" value={reservation.id} />
-      <input type="hidden" name="human_id" value={reservation.human_id} />
-    </>
-  );
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      {reservation.status === "tentative" && (
-        <>
-          <form action={approveReservation}>
-            {idFields}
-            <button
-              type="submit"
-              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
-            >
-              Approve & email
-            </button>
-          </form>
-          <details className="relative">
-            <summary className="cursor-pointer rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium hover:bg-neutral-50">
-              Deny…
-            </summary>
-            <form
-              action={denyReservation}
-              className="absolute right-0 z-10 mt-2 w-80 rounded-lg border bg-white p-4 shadow-lg"
-            >
-              {idFields}
-              <label className="mb-2 block text-sm font-medium">
-                Reason (optional — sent to requester)
-              </label>
-              <textarea
-                name="reason"
-                rows={3}
-                className="mb-3 w-full rounded-md border border-neutral-300 px-2 py-1 text-sm"
-                placeholder="e.g. Gear is already committed that weekend."
-              />
-              <button
-                type="submit"
-                className="w-full rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700"
-              >
-                Send denial
-              </button>
-            </form>
-          </details>
-        </>
-      )}
-
-      {reservation.status === "approved" && (
-        <>
-          <form action={markPickedUp}>
-            {idFields}
-            <button
-              type="submit"
-              className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-sky-700"
-            >
-              Mark picked up
-            </button>
-          </form>
-          <form action={resendTemplate}>
-            {idFields}
-            <input type="hidden" name="template_key" value="approve" />
-            <button
-              type="submit"
-              className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium hover:bg-neutral-50"
-            >
-              Resend approval
-            </button>
-          </form>
-        </>
-      )}
-
-      {reservation.status === "picked_up" && (
-        <form action={markReturned}>
-          {idFields}
-          <button
-            type="submit"
-            className="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
-          >
-            Mark returned
-          </button>
-        </form>
-      )}
-
-      {reservation.status === "returned" && (
-        <form action={sendFollowup}>
-          {idFields}
-          <button
-            type="submit"
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
-          >
-            Send follow-up email
-          </button>
-        </form>
-      )}
-
-      {reservation.status !== "cancelled" && reservation.status !== "denied" && (
-        <form action={cancelReservation}>
-          {idFields}
-          <button
-            type="submit"
-            className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50"
-          >
-            Cancel
-          </button>
-        </form>
-      )}
-    </div>
-  );
-}
-
 // ─────────────── Editable panels ───────────────
 
 function EventPanel({ r }: { r: Reservation }) {
   return (
     <Panel title="Event & logistics">
-      <form action={updateReservationFields} className="grid gap-4 sm:grid-cols-2">
+      <form
+        action={updateReservationFields}
+        className="grid gap-4 sm:grid-cols-2"
+      >
         <input type="hidden" name="reservation_id" value={r.id} />
         <input type="hidden" name="human_id" value={r.human_id} />
 
@@ -478,23 +371,26 @@ function EventPanel({ r }: { r: Reservation }) {
         <ReadOnly label="Return" value={formatDate(r.return_at)} />
 
         <Field
-          label="Pickup location"
-          name="pickup_location"
-          defaultValue={r.pickup_location ?? ""}
-          placeholder="e.g. Petworth UMC basement"
-        />
-        <Field
-          label="Organizer contact (name)"
-          name="organizer_contact_name"
-          defaultValue={r.organizer_contact_name ?? ""}
+          label="Organizer name"
+          name="requester_name"
+          defaultValue={r.requester_name ?? ""}
           placeholder="e.g. Liz Hohenberger"
         />
         <Field
-          label="Organizer contact (phone)"
-          name="organizer_contact_phone"
-          defaultValue={r.organizer_contact_phone ?? ""}
+          label="Organizer phone"
+          name="requester_phone"
+          defaultValue={r.requester_phone ?? ""}
           placeholder="e.g. 555-123-4567"
         />
+
+        <div className="sm:col-span-2">
+          <Field
+            label="Pickup location"
+            name="pickup_location"
+            defaultValue={r.pickup_location ?? ""}
+            placeholder="e.g. Petworth UMC basement"
+          />
+        </div>
 
         <div className="sm:col-span-2 flex justify-end">
           <button
@@ -530,40 +426,6 @@ function NotesPanel({ r }: { r: Reservation }) {
             Save notes
           </button>
         </div>
-      </form>
-    </Panel>
-  );
-}
-
-function ResendPanel({ r }: { r: Reservation }) {
-  const options: { key: string; label: string }[] = [
-    { key: "submission_ack", label: "Submission ack" },
-    { key: "approve",        label: "Approval" },
-    { key: "deny",           label: "Denial" },
-    { key: "followup",       label: "Follow-up" },
-  ];
-  return (
-    <Panel title="Resend an email">
-      <form action={resendTemplate} className="flex flex-wrap items-center gap-2">
-        <input type="hidden" name="reservation_id" value={r.id} />
-        <input type="hidden" name="human_id" value={r.human_id} />
-        <select
-          name="template_key"
-          className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
-          defaultValue="approve"
-        >
-          {options.map((o) => (
-            <option key={o.key} value={o.key}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          className="rounded-md border border-neutral-300 bg-white px-3 py-1 text-sm hover:bg-neutral-50"
-        >
-          Resend to {r.requester_email}
-        </button>
       </form>
     </Panel>
   );

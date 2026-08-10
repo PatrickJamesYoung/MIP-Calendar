@@ -23,9 +23,8 @@ interface Props {
   minNoticeHours: number;
   tentativeDisclaimer?: string;
   defaultPickupLocation: string;
-  defaultContactName: string;
-  defaultContactPhone: string;
   tierLabels: { full: string; mid: string; low: string };
+  initialTier: "full" | "mid" | "low";
   turnstileSiteKey: string | null;
 }
 
@@ -71,9 +70,8 @@ export function ReserveForm(props: Props) {
     minNoticeHours,
     tentativeDisclaimer,
     defaultPickupLocation,
-    defaultContactName,
-    defaultContactPhone,
     tierLabels,
+    initialTier,
     turnstileSiteKey,
   } = props;
 
@@ -82,7 +80,7 @@ export function ReserveForm(props: Props) {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [pickupDefault, setPickupDefault] = useState<string>("");
   const [returnDefault, setReturnDefault] = useState<string>("");
-  const [tier, setTier] = useState<"full" | "mid" | "low">("mid");
+  const [tier, setTier] = useState<"full" | "mid" | "low">(initialTier);
 
   useEffect(() => {
     // Compute defaults on client to avoid SSR/CSR time drift
@@ -327,25 +325,17 @@ export function ReserveForm(props: Props) {
             <strong>{minNoticeHours} hours</strong> of notice.
           </p>
 
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="mt-4">
             <TextField
               label="Pickup location"
               name="pickup_location"
               defaultValue={defaultPickupLocation}
               placeholder="If different from the default"
             />
-            <div className="hidden sm:block" />
-            <TextField
-              label="On-site contact name"
-              name="organizer_contact_name"
-              defaultValue={defaultContactName}
-            />
-            <TextField
-              label="On-site contact phone"
-              name="organizer_contact_phone"
-              type="tel"
-              defaultValue={defaultContactPhone}
-            />
+            <p className="mt-2 text-xs text-mip-gray-500">
+              The name and phone you gave above are what we'll use to
+              reach you on-site — no separate contact needed.
+            </p>
           </div>
         </Section>
 

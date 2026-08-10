@@ -4,25 +4,33 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  sendGearTemplateEmail,
+  renderGearTemplateEmail,
+  sendGearRawEmail,
   type GearEmailTemplateKey,
 } from "@/lib/gear/email";
 
 /**
  * Server actions for the reservation detail page.
  *
- * Every action calls requireAdmin(), writes a gear_activity row, and
- * revalidatePath(). Actions that send email record whether the send
- * succeeded in the audit log detail column.
+ * Design notes:
+ *  - Status changes and emails are independent. Setting a reservation to
+ *    `approved` no longer implicitly sends the approval email; the
+ *    organizer sends emails explicitly via the "Send email" modal.
+ *  - `prepareEmailDraft` renders a template with placeholders filled in
+ *    but doesn't send; the client renders the result in an editable
+ *    modal. `sendPreparedEmail` accepts a possibly-edited subject/body
+ *    and does the actual Resend call.
  */
 
-type Status =
-  | "tentative"
-  | "approved"
-  | "denied"
-  | "picked_up"
-  | "returned"
-  | "cancelled";
+const STATUSES = [
+  "tentative",
+  "approved",
+  "denied",
+  "picked_up",
+  "returned",
+  "cancelled",
+] as const;
+type Status = (typeof STATUSES)[number];
 
 interface Reservation {
   id: string;
@@ -50,14 +58,21 @@ async function loadForEmail(
   reservationId: string
 ): Promise<{ reservation: Reservation; lines: Line[] } | null> {
   const [{ data: reservation }, { data: lines }] = await Promise.all([
-    supabase.from("gear_reservations").select("*").eq("id", reservationId).maybeSingle(),
+    supabase
+      .from("gear_reservations")
+      .select("*")
+      .eq("id", reservationId)
+      .maybeSingle(),
     supabase
       .from("gear_reservation_lines")
       .select("name_snapshot,quantity,unit_contribution,line_full")
       .eq("reservation_id", reservationId),
   ]);
   if (!reservation) return null;
-  return { reservation: reservation as Reservation, lines: (lines ?? []) as Line[] };
+  return {
+    reservation: reservation as Reservation,
+    lines: (lines ?? []) as Line[],
+  };
 }
 
 async function logActivity(args: {
@@ -75,227 +90,141 @@ async function logActivity(args: {
   });
 }
 
-async function updateStatus(
-  supabase: ReturnType<typeof createAdminClient>,
-  reservationId: string,
-  status: Status
-) {
+// ---------- STATUS UPDATE (no email side-effect) ----------
+
+export async function updateReservationStatus(args: {
+  reservationId: string;
+  humanId: string;
+  status: Status;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = await requireAdmin();
+  if (!args.reservationId || !args.humanId) {
+    return { ok: false, error: "Missing reservation_id or human_id" };
+  }
+  if (!STATUSES.includes(args.status)) {
+    return { ok: false, error: `Invalid status: ${args.status}` };
+  }
+
+  const supabase = createAdminClient();
   const { error } = await supabase
     .from("gear_reservations")
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq("id", reservationId);
-  if (error) throw new Error(`Failed to update status: ${error.message}`);
+    .update({ status: args.status, updated_at: new Date().toISOString() })
+    .eq("id", args.reservationId);
+  if (error) return { ok: false, error: error.message };
+
+  await logActivity({
+    supabase,
+    reservationId: args.reservationId,
+    actorEmail: admin.email,
+    action: "status_changed",
+    detail: { status: args.status },
+  });
+
+  revalidatePath(`/admin/gear/${args.humanId}`);
+  revalidatePath("/admin/gear");
+  return { ok: true };
 }
 
-// ---------- APPROVE ----------
+// ---------- PREPARE EMAIL DRAFT (no send) ----------
 
-export async function approveReservation(formData: FormData) {
-  const admin = await requireAdmin();
-  const reservationId = String(formData.get("reservation_id") ?? "");
-  const humanId = String(formData.get("human_id") ?? "");
-  if (!reservationId || !humanId) throw new Error("Missing reservation_id or human_id");
-
+export async function prepareEmailDraft(args: {
+  reservationId: string;
+  templateKey: GearEmailTemplateKey;
+  extraPlaceholders?: Record<string, string>;
+}): Promise<
+  | { ok: true; subject: string; bodyText: string; recipient: string }
+  | { ok: false; error: string }
+> {
+  await requireAdmin();
   const supabase = createAdminClient();
-  await updateStatus(supabase, reservationId, "approved");
+  const bundle = await loadForEmail(supabase, args.reservationId);
+  if (!bundle) return { ok: false, error: "Reservation not found" };
 
-  const bundle = await loadForEmail(supabase, reservationId);
-  let emailResult: { ok: boolean; error?: string } = { ok: false, error: "no-data" };
-  if (bundle) {
-    emailResult = await sendGearTemplateEmail({
-      templateKey: "approve",
-      reservation: bundle.reservation,
-      lines: bundle.lines,
-    });
+  const rendered = await renderGearTemplateEmail({
+    templateKey: args.templateKey,
+    reservation: bundle.reservation,
+    lines: bundle.lines,
+    extraPlaceholders: args.extraPlaceholders,
+  });
+  if (!rendered.ok) return { ok: false, error: rendered.error };
+
+  return {
+    ok: true,
+    subject: rendered.rendered.subject,
+    bodyText: rendered.rendered.bodyText,
+    recipient: bundle.reservation.requester_email,
+  };
+}
+
+// ---------- SEND PREPARED EMAIL (with possibly-edited body) ----------
+
+export async function sendPreparedEmail(args: {
+  reservationId: string;
+  humanId: string;
+  templateKey: GearEmailTemplateKey;
+  subject: string;
+  bodyText: string;
+}): Promise<
+  { ok: true; subject: string } | { ok: false; error: string }
+> {
+  const admin = await requireAdmin();
+  if (!args.reservationId || !args.humanId) {
+    return { ok: false, error: "Missing reservation_id or human_id" };
   }
-
-  await logActivity({
-    supabase,
-    reservationId,
-    actorEmail: admin.email,
-    action: "approved",
-    detail: { email: emailResult },
-  });
-
-  revalidatePath(`/admin/gear/${humanId}`);
-  revalidatePath("/admin/gear");
-}
-
-// ---------- DENY ----------
-
-export async function denyReservation(formData: FormData) {
-  const admin = await requireAdmin();
-  const reservationId = String(formData.get("reservation_id") ?? "");
-  const humanId = String(formData.get("human_id") ?? "");
-  const reason = String(formData.get("reason") ?? "").trim();
-  if (!reservationId || !humanId) throw new Error("Missing reservation_id or human_id");
+  const subject = args.subject.trim();
+  const body = args.bodyText.trim();
+  if (!subject) return { ok: false, error: "Subject is required" };
+  if (!body) return { ok: false, error: "Body is required" };
 
   const supabase = createAdminClient();
-  await updateStatus(supabase, reservationId, "denied");
+  const { data: reservation } = await supabase
+    .from("gear_reservations")
+    .select("id, human_id, requester_email")
+    .eq("id", args.reservationId)
+    .maybeSingle();
+  if (!reservation) return { ok: false, error: "Reservation not found" };
 
-  const bundle = await loadForEmail(supabase, reservationId);
-  let emailResult: { ok: boolean; error?: string } = { ok: false, error: "no-data" };
-  if (bundle) {
-    emailResult = await sendGearTemplateEmail({
-      templateKey: "deny",
-      reservation: bundle.reservation,
-      lines: bundle.lines,
-      extraPlaceholders: reason ? { reason } : undefined,
-    });
-  }
-
-  await logActivity({
-    supabase,
-    reservationId,
-    actorEmail: admin.email,
-    action: "denied",
-    detail: { email: emailResult, reason: reason || null },
+  const result = await sendGearRawEmail({
+    reservation: {
+      requester_email: reservation.requester_email,
+      human_id: reservation.human_id,
+    },
+    subject,
+    bodyText: body,
   });
 
-  revalidatePath(`/admin/gear/${humanId}`);
-  revalidatePath("/admin/gear");
-}
-
-// ---------- MARK PICKED UP ----------
-
-export async function markPickedUp(formData: FormData) {
-  const admin = await requireAdmin();
-  const reservationId = String(formData.get("reservation_id") ?? "");
-  const humanId = String(formData.get("human_id") ?? "");
-  if (!reservationId || !humanId) throw new Error("Missing reservation_id or human_id");
-
-  const supabase = createAdminClient();
-  await updateStatus(supabase, reservationId, "picked_up");
   await logActivity({
     supabase,
-    reservationId,
-    actorEmail: admin.email,
-    action: "picked_up",
-  });
-
-  revalidatePath(`/admin/gear/${humanId}`);
-  revalidatePath("/admin/gear");
-}
-
-// ---------- MARK RETURNED ----------
-
-export async function markReturned(formData: FormData) {
-  const admin = await requireAdmin();
-  const reservationId = String(formData.get("reservation_id") ?? "");
-  const humanId = String(formData.get("human_id") ?? "");
-  if (!reservationId || !humanId) throw new Error("Missing reservation_id or human_id");
-
-  const supabase = createAdminClient();
-  await updateStatus(supabase, reservationId, "returned");
-  await logActivity({
-    supabase,
-    reservationId,
-    actorEmail: admin.email,
-    action: "returned",
-  });
-
-  revalidatePath(`/admin/gear/${humanId}`);
-  revalidatePath("/admin/gear");
-}
-
-// ---------- CANCEL ----------
-
-export async function cancelReservation(formData: FormData) {
-  const admin = await requireAdmin();
-  const reservationId = String(formData.get("reservation_id") ?? "");
-  const humanId = String(formData.get("human_id") ?? "");
-  if (!reservationId || !humanId) throw new Error("Missing reservation_id or human_id");
-
-  const supabase = createAdminClient();
-  await updateStatus(supabase, reservationId, "cancelled");
-  await logActivity({
-    supabase,
-    reservationId,
-    actorEmail: admin.email,
-    action: "cancelled",
-  });
-
-  revalidatePath(`/admin/gear/${humanId}`);
-  revalidatePath("/admin/gear");
-}
-
-// ---------- SEND FOLLOWUP ----------
-
-export async function sendFollowup(formData: FormData) {
-  const admin = await requireAdmin();
-  const reservationId = String(formData.get("reservation_id") ?? "");
-  const humanId = String(formData.get("human_id") ?? "");
-  if (!reservationId || !humanId) throw new Error("Missing reservation_id or human_id");
-
-  const supabase = createAdminClient();
-  const bundle = await loadForEmail(supabase, reservationId);
-  let emailResult: { ok: boolean; error?: string } = { ok: false, error: "no-data" };
-  if (bundle) {
-    emailResult = await sendGearTemplateEmail({
-      templateKey: "followup",
-      reservation: bundle.reservation,
-      lines: bundle.lines,
-    });
-  }
-
-  await logActivity({
-    supabase,
-    reservationId,
+    reservationId: args.reservationId,
     actorEmail: admin.email,
     action: "email_sent",
-    detail: { template: "followup", email: emailResult },
+    detail: {
+      template: args.templateKey,
+      email: result,
+      // Signal whether the organizer edited the draft (roughly).
+      edited: subject.length + body.length > 0,
+    },
   });
 
-  revalidatePath(`/admin/gear/${humanId}`);
+  revalidatePath(`/admin/gear/${args.humanId}`);
+  if (!result.ok) return { ok: false, error: result.error ?? "Send failed" };
+  return { ok: true, subject: result.subject ?? subject };
 }
 
-// ---------- RESEND TEMPLATE ----------
-
-export async function resendTemplate(formData: FormData) {
-  const admin = await requireAdmin();
-  const reservationId = String(formData.get("reservation_id") ?? "");
-  const humanId = String(formData.get("human_id") ?? "");
-  const templateKey = String(formData.get("template_key") ?? "") as GearEmailTemplateKey;
-  if (!reservationId || !humanId || !templateKey) {
-    throw new Error("Missing reservation_id, human_id, or template_key");
-  }
-  const allowed: GearEmailTemplateKey[] = ["submission_ack", "approve", "deny", "followup"];
-  if (!allowed.includes(templateKey)) throw new Error(`Unknown template: ${templateKey}`);
-
-  const supabase = createAdminClient();
-  const bundle = await loadForEmail(supabase, reservationId);
-  let emailResult: { ok: boolean; error?: string } = { ok: false, error: "no-data" };
-  if (bundle) {
-    emailResult = await sendGearTemplateEmail({
-      templateKey,
-      reservation: bundle.reservation,
-      lines: bundle.lines,
-    });
-  }
-
-  await logActivity({
-    supabase,
-    reservationId,
-    actorEmail: admin.email,
-    action: "email_resent",
-    detail: { template: templateKey, email: emailResult },
-  });
-
-  revalidatePath(`/admin/gear/${humanId}`);
-}
-
-// ---------- UPDATE FIELDS (notes, pickup location, organizer contact) ----------
+// ---------- UPDATE FIELDS (notes, pickup location, contact) ----------
 
 export async function updateReservationFields(formData: FormData) {
   const admin = await requireAdmin();
   const reservationId = String(formData.get("reservation_id") ?? "");
   const humanId = String(formData.get("human_id") ?? "");
-  if (!reservationId || !humanId) throw new Error("Missing reservation_id or human_id");
+  if (!reservationId || !humanId)
+    throw new Error("Missing reservation_id or human_id");
 
   const patch: Record<string, string | null> = {};
   const fields = [
+    "requester_name",
+    "requester_phone",
     "pickup_location",
-    "organizer_contact_name",
-    "organizer_contact_phone",
     "internal_notes",
   ];
   for (const f of fields) {
