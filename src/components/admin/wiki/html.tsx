@@ -1,24 +1,27 @@
-import DOMPurify from "isomorphic-dompurify";
+import sanitizeHtml from "sanitize-html";
 
 /**
  * Server-rendered HTML for wiki page bodies authored via Tiptap.
  *
- * Sanitized with DOMPurify. We're conservative:
- *   - Strip scripts, event handlers, and javascript: URLs.
- *   - Force target="_blank" + rel="noopener noreferrer" on all anchors.
- *   - Allow the set of tags Tiptap actually emits from our StarterKit +
- *     Link + Table configuration; anything else gets dropped.
+ * We use sanitize-html (pure JS, no jsdom) rather than DOMPurify to keep
+ * this working in Next.js server components on Vercel without pulling
+ * a DOM shim into the serverless bundle.
  *
- * Even though only admins can author, sanitizing keeps us safe from:
- *   - A future non-admin write path (e.g. import, migration).
- *   - Copy-pasted HTML that admins didn't realize they were pasting.
+ * Sanitization policy:
+ *   - Allow only the tags Tiptap actually emits (StarterKit + Link + Table).
+ *   - Force every <a> to rel="noopener noreferrer" and open external
+ *     links in a new tab.
+ *   - Restrict URL schemes to http/https/mailto/tel.
+ *   - Drop anything else, including scripts and inline event handlers.
  */
 
 const ALLOWED_TAGS = [
   "p",
   "br",
   "strong",
+  "b",
   "em",
+  "i",
   "s",
   "code",
   "pre",
@@ -42,8 +45,6 @@ const ALLOWED_TAGS = [
   "td",
 ];
 
-const ALLOWED_ATTR = ["href", "colspan", "rowspan", "rel", "target"];
-
 export function WikiHtml({ source }: { source: string }) {
   if (!source.trim()) {
     return (
@@ -53,28 +54,30 @@ export function WikiHtml({ source }: { source: string }) {
     );
   }
 
-  // DOMPurify hooks: force safe link attributes on every <a>.
-  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-    if (node.tagName === "A") {
-      const el = node as Element;
-      el.setAttribute("rel", "noopener noreferrer");
-      const href = el.getAttribute("href") ?? "";
-      if (href.startsWith("http")) {
-        el.setAttribute("target", "_blank");
-      }
-    }
+  const clean = sanitizeHtml(source, {
+    allowedTags: ALLOWED_TAGS,
+    allowedAttributes: {
+      a: ["href", "target", "rel"],
+      th: ["colspan", "rowspan"],
+      td: ["colspan", "rowspan"],
+    },
+    allowedSchemes: ["http", "https", "mailto", "tel"],
+    allowProtocolRelative: false,
+    transformTags: {
+      a: (tagName, attribs) => {
+        const href = attribs.href ?? "";
+        const isExternal = href.startsWith("http");
+        return {
+          tagName: "a",
+          attribs: {
+            href,
+            rel: "noopener noreferrer",
+            ...(isExternal ? { target: "_blank" } : {}),
+          },
+        };
+      },
+    },
   });
-
-  const clean = DOMPurify.sanitize(source, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR,
-    // Belt-and-suspenders: reject any protocol other than http(s), mailto, tel.
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
-  });
-
-  // Remove the hook after use so it doesn't leak into other sanitize calls
-  // in the same render pass. DOMPurify hooks are process-global.
-  DOMPurify.removeAllHooks();
 
   return (
     <div
