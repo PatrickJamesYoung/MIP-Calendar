@@ -139,6 +139,53 @@ export async function updatePage(
   redirect(`/admin/wiki/${data.slug}`);
 }
 
+// ---------- RESTORE VERSION ----------
+
+/**
+ * Restore an older version by copying its content into the current
+ * wiki_pages row. Does NOT rewrite history — the DB trigger writes a new
+ * version pointing at the same body, with the current admin as editor.
+ */
+export async function restoreVersion(formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  const pageId = String(formData.get("page_id") ?? "");
+  const versionNum = Number(formData.get("version") ?? "");
+  const slug = String(formData.get("slug") ?? "");
+  if (!pageId || !Number.isFinite(versionNum) || !slug) {
+    throw new Error("Missing page_id, version, or slug");
+  }
+
+  const supabase = await createClient();
+  const { data: snapshot, error: fetchErr } = await supabase
+    .from("wiki_page_versions")
+    .select("title,body_md,summary")
+    .eq("page_id", pageId)
+    .eq("version", versionNum)
+    .maybeSingle();
+
+  if (fetchErr || !snapshot) {
+    throw new Error("Could not load that version.");
+  }
+
+  const { error: updateErr } = await supabase
+    .from("wiki_pages")
+    .update({
+      title: snapshot.title,
+      body_md: snapshot.body_md,
+      summary: snapshot.summary,
+      updated_by: admin.user_id,
+    })
+    .eq("id", pageId);
+
+  if (updateErr) {
+    throw new Error(`Could not restore version: ${updateErr.message}`);
+  }
+
+  revalidatePath(`/admin/wiki/${slug}`);
+  revalidatePath(`/admin/wiki/${slug}/history`);
+  redirect(`/admin/wiki/${slug}`);
+}
+
 // ---------- DELETE ----------
 
 export async function deletePage(formData: FormData): Promise<void> {
