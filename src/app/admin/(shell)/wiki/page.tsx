@@ -11,6 +11,8 @@ interface WikiPageRow {
   title: string;
   summary: string | null;
   updated_at: string;
+  /** Only populated when this row came back from wiki_search. */
+  snippet?: string;
 }
 
 const PAGE_SIZE = 50;
@@ -26,23 +28,28 @@ export default async function AdminWikiIndexPage({
 
   const supabase = await createClient();
 
-  let query = supabase
-    .from("wiki_pages")
-    .select("id,slug,title,summary,updated_at", { count: "exact" })
-    .order("updated_at", { ascending: false })
-    .limit(PAGE_SIZE);
+  // Two code paths:
+  //  - No query → plain ordered list from wiki_pages (with exact count).
+  //  - Query   → wiki_search RPC, which returns headline snippets and
+  //              rank-ordered rows. Count is just rows.length — the RPC
+  //              caps at 50, which matches the plain list's PAGE_SIZE, so
+  //              a single number is honest here.
+  let pages: WikiPageRow[];
+  let totalCount: number;
 
   if (search) {
-    // Simple ilike prefilter; PR #4 will swap in Postgres FTS via search_tsv.
-    const like = `%${search}%`;
-    query = query.or(
-      [`title.ilike.${like}`, `summary.ilike.${like}`, `slug.ilike.${like}`].join(",")
-    );
+    const { data } = await supabase.rpc("wiki_search", { q: search });
+    pages = (data ?? []) as WikiPageRow[];
+    totalCount = pages.length;
+  } else {
+    const { data, count } = await supabase
+      .from("wiki_pages")
+      .select("id,slug,title,summary,updated_at", { count: "exact" })
+      .order("updated_at", { ascending: false })
+      .limit(PAGE_SIZE);
+    pages = (data ?? []) as WikiPageRow[];
+    totalCount = count ?? pages.length;
   }
-
-  const { data, count } = await query;
-  const pages = (data ?? []) as WikiPageRow[];
-  const totalCount = count ?? pages.length;
 
   return (
     <div className="space-y-6">
@@ -80,7 +87,7 @@ export default async function AdminWikiIndexPage({
           type="search"
           name="q"
           defaultValue={search}
-          placeholder="Search pages by title, summary, or slug"
+          placeholder='Full-text search — try "foo" phrase, -exclude, or foo OR bar'
           className="flex-1 md:max-w-md px-3 py-1.5 text-sm border border-mip-gray-300 focus:outline-none focus:border-mip-purple"
           style={{ borderRadius: "var(--radius-button)" }}
         />
@@ -127,10 +134,23 @@ export default async function AdminWikiIndexPage({
                           {p.title}
                         </span>
                       </div>
-                      {p.summary && (
-                        <p className="mt-1 text-sm text-mip-gray-700 line-clamp-2">
-                          {p.summary}
-                        </p>
+                      {p.snippet ? (
+                        // ts_headline emits <b>...</b> around matches. Safe:
+                        // the RPC only ever runs against admin-authored
+                        // wiki bodies, and any HTML in those bodies would
+                        // already have been shown to admins by WikiMarkdown
+                        // (which itself does not honor raw HTML). Rendering
+                        // this snippet as HTML lets us show the highlights.
+                        <p
+                          className="mt-1 text-sm text-mip-gray-700 line-clamp-2 [&_b]:font-bold [&_b]:text-mip-purple"
+                          dangerouslySetInnerHTML={{ __html: p.snippet }}
+                        />
+                      ) : (
+                        p.summary && (
+                          <p className="mt-1 text-sm text-mip-gray-700 line-clamp-2">
+                            {p.summary}
+                          </p>
+                        )
                       )}
                       <p className="mt-1 text-xs text-mip-gray-500 font-mono">
                         /{p.slug}
