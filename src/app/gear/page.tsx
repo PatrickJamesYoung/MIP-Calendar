@@ -1,7 +1,8 @@
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { MipSiteHeader } from "@/components/mip-site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { GearBrowser } from "./gear-browser";
-import { EmbedResizer } from "./embed-resizer";
 
 export const dynamic = "force-dynamic";
 
@@ -72,15 +73,21 @@ export default async function GearIndexPage() {
   };
 
   return (
-    <main className="mx-auto w-full px-6 py-8" style={{ maxWidth: "1120px" }}>
-      <EmbedResizer />
-      <Suspense fallback={null}>
-        <GearBrowser
-          items={items}
-          tierLabels={tierLabels}
-          tierMultipliers={tierMultipliers}
-        />
-      </Suspense>
-    </main>
+    <div className="min-h-screen flex flex-col">
+      <MipSiteHeader />
+      <main
+        className="mx-auto w-full px-6 py-8 flex-1"
+        style={{ maxWidth: "1200px" }}
+      >
+        <Suspense fallback={null}>
+          <GearBrowser
+            items={items}
+            tierLabels={tierLabels}
+            tierMultipliers={tierMultipliers}
+          />
+        </Suspense>
+      </main>
+      <SiteFooter />
+    </div>
   );
 }
