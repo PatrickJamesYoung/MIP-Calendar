@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Pencil, Clock } from "lucide-react";
+import { Pencil, Clock, History } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { WikiMarkdown } from "@/components/admin/wiki/markdown";
@@ -90,6 +90,14 @@ export default async function WikiViewPage({
           >
             <Pencil className="w-4 h-4" />
             Edit
+          </Link>
+          <Link
+            href={`/admin/wiki/${page.slug}/history`}
+            className="inline-flex items-center gap-2 px-4 py-2 mip-button-text border border-mip-gray-300 text-mip-gray-700 hover:bg-mip-gray-100"
+            style={{ borderRadius: "var(--radius-button)" }}
+          >
+            <History className="w-4 h-4" />
+            History
           </Link>
           <DeleteWikiPageButton id={page.id} title={page.title} />
         </div>
