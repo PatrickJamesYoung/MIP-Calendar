@@ -1,7 +1,4 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { SiteHeader } from "@/components/site-header";
-import { SiteFooter } from "@/components/site-footer";
 import { GearBrowser } from "./gear-browser";
 
 export const dynamic = "force-dynamic";
@@ -47,59 +44,37 @@ export default async function GearIndexPage() {
       .from("gear_settings")
       .select("key,value")
       .in("key", [
-        "organization_name",
-        "tentative_disclaimer",
-        "min_notice_hours",
+        "tier_full_label",
+        "tier_mid_label",
+        "tier_low_label",
+        "tier_full_multiplier",
+        "tier_mid_multiplier",
+        "tier_low_multiplier",
       ]),
   ]);
 
   const items = (itemsRes.data ?? []) as Item[];
   const settings = (settingsRes.data ?? []) as Setting[];
+  const s = new Map(settings.map((row) => [row.key, row.value]));
 
-  const settingsMap = new Map(settings.map((s) => [s.key, s.value]));
-  const orgName = (settingsMap.get("organization_name") as string) ?? "MIP";
-  const disclaimer = settingsMap.get("tentative_disclaimer") as string | undefined;
-  const minNoticeHours =
-    (settingsMap.get("min_notice_hours") as number | undefined) ?? 48;
+  const tierLabels = {
+    full: (s.get("tier_full_label") as string) ?? "Well-resourced organization",
+    mid: (s.get("tier_mid_label") as string) ?? "Small organization or coalition",
+    low: (s.get("tier_low_label") as string) ?? "Volunteer group or individual",
+  };
+  const tierMultipliers = {
+    full: Number(s.get("tier_full_multiplier") ?? 1),
+    mid: Number(s.get("tier_mid_multiplier") ?? 0.85),
+    low: Number(s.get("tier_low_multiplier") ?? 0.65),
+  };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <SiteHeader />
-
-      <main
-        className="flex-1 mx-auto w-full px-6 py-10"
-        style={{ maxWidth: "1120px" }}
-      >
-        <div className="max-w-2xl">
-          <h1
-            className="mip-heading text-3xl md:text-4xl mip-double-underline inline-block pb-1"
-            style={{ color: "var(--color-mip-purple)" }}
-          >
-            Gear Library
-          </h1>
-          <p className="mt-4 text-sm md:text-base text-mip-gray-700 leading-relaxed">
-            {orgName} lends event and organizing equipment to grassroots
-            groups in DC. Add what you need to your list, then submit a
-            reservation request — a human will review and confirm within{" "}
-            <strong>3 business days</strong>.
-          </p>
-          <ul className="mt-4 text-sm text-mip-gray-700 leading-relaxed list-disc pl-5 space-y-1">
-            <li>
-              Suggested contributions are just that — pay what you can, or
-              nothing.
-            </li>
-            <li>
-              Requests need at least <strong>{minNoticeHours} hours</strong> of
-              notice before pickup.
-            </li>
-            {disclaimer && <li>{disclaimer}</li>}
-          </ul>
-        </div>
-
-        <GearBrowser items={items} />
-      </main>
-
-      <SiteFooter />
-    </div>
+    <main className="mx-auto w-full px-6 py-8" style={{ maxWidth: "1120px" }}>
+      <GearBrowser
+        items={items}
+        tierLabels={tierLabels}
+        tierMultipliers={tierMultipliers}
+      />
+    </main>
   );
 }

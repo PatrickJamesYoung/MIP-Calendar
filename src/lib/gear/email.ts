@@ -56,32 +56,26 @@ interface SendResult {
   subject?: string;
 }
 
-export async function sendGearTemplateEmail(args: {
+export interface RenderedTemplate {
+  subject: string;
+  bodyText: string;
+}
+
+/**
+ * Render a stored template with placeholders filled in, but don't send.
+ * Used by the admin "preview & edit" flow so an organizer can review
+ * (and tweak) the draft before it goes out.
+ */
+export async function renderGearTemplateEmail(args: {
   templateKey: GearEmailTemplateKey;
   reservation: ReservationLike;
   lines: LineLike[];
   extraPlaceholders?: Record<string, string>;
-}): Promise<SendResult> {
-  if (!client) {
-    console.warn(
-      "[gear-email] RESEND_API_KEY not set — skipping send",
-      args.templateKey,
-      args.reservation.human_id
-    );
-    return { ok: false, error: "email-not-configured" };
-  }
-  if (!FROM) {
-    console.warn(
-      "[gear-email] GEAR_EMAIL_FROM not set — skipping send",
-      args.templateKey,
-      args.reservation.human_id
-    );
-    return { ok: false, error: "gear-email-from-not-set" };
-  }
-
+}): Promise<
+  { ok: true; rendered: RenderedTemplate } | { ok: false; error: string }
+> {
   const supabase = createAdminClient();
 
-  // Fetch template + relevant settings in parallel
   const [templateRes, settingsRes] = await Promise.all([
     supabase
       .from("gear_email_templates")
@@ -115,26 +109,78 @@ export async function sendGearTemplateEmail(args: {
     args.extraPlaceholders ?? {}
   );
 
-  const subject = render(templateRes.data.subject ?? "", placeholders);
-  const bodyText = render(templateRes.data.body ?? "", placeholders);
-  const bodyHtml = textToHtml(bodyText);
+  return {
+    ok: true,
+    rendered: {
+      subject: render(templateRes.data.subject ?? "", placeholders),
+      bodyText: render(templateRes.data.body ?? "", placeholders),
+    },
+  };
+}
+
+/**
+ * Send an already-rendered subject+body to the reservation's requester.
+ * The admin preview-and-edit flow uses this after the organizer has
+ * (optionally) tweaked the draft. `bodyText` is the source of truth —
+ * we auto-derive HTML from it.
+ */
+export async function sendGearRawEmail(args: {
+  reservation: Pick<ReservationLike, "requester_email" | "human_id">;
+  subject: string;
+  bodyText: string;
+}): Promise<SendResult> {
+  if (!client) {
+    console.warn(
+      "[gear-email] RESEND_API_KEY not set — skipping send",
+      args.reservation.human_id
+    );
+    return { ok: false, error: "email-not-configured", subject: args.subject };
+  }
+  if (!FROM) {
+    console.warn(
+      "[gear-email] GEAR_EMAIL_FROM not set — skipping send",
+      args.reservation.human_id
+    );
+    return {
+      ok: false,
+      error: "gear-email-from-not-set",
+      subject: args.subject,
+    };
+  }
+
+  const bodyHtml = textToHtml(args.bodyText);
 
   try {
     const emailOpts: Parameters<typeof client.emails.send>[0] = {
       from: FROM,
       to: args.reservation.requester_email,
-      subject,
+      subject: args.subject,
       html: bodyHtml,
-      text: bodyText,
+      text: args.bodyText,
     };
     if (REPLY_TO) emailOpts.replyTo = REPLY_TO;
 
     const { error } = await client.emails.send(emailOpts);
-    if (error) return { ok: false, error: error.message, subject };
-    return { ok: true, subject };
+    if (error) return { ok: false, error: error.message, subject: args.subject };
+    return { ok: true, subject: args.subject };
   } catch (e) {
-    return { ok: false, error: (e as Error).message, subject };
+    return { ok: false, error: (e as Error).message, subject: args.subject };
   }
+}
+
+export async function sendGearTemplateEmail(args: {
+  templateKey: GearEmailTemplateKey;
+  reservation: ReservationLike;
+  lines: LineLike[];
+  extraPlaceholders?: Record<string, string>;
+}): Promise<SendResult> {
+  const rendered = await renderGearTemplateEmail(args);
+  if (!rendered.ok) return { ok: false, error: rendered.error };
+  return sendGearRawEmail({
+    reservation: args.reservation,
+    subject: rendered.rendered.subject,
+    bodyText: rendered.rendered.bodyText,
+  });
 }
 
 function buildPlaceholders(
