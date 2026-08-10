@@ -61,7 +61,12 @@ const NAV: NavEntry[] = [
     group: {
       label: "Gear",
       activePrefixes: ["/admin/gear"],
-      items: [{ href: "/admin/gear", label: "Requests" }],
+      items: [
+        { href: "/admin/gear", label: "Requests", exact: true },
+        { href: "/admin/gear/catalog", label: "Catalog" },
+        { href: "/admin/gear/templates", label: "Email templates" },
+        { href: "/admin/gear/settings", label: "Settings" },
+      ],
     },
   },
   {
