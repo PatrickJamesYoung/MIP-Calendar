@@ -52,6 +52,10 @@ export async function requireAdmin(): Promise<AdminUser> {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    // The Next proxy (src/proxy.ts) already redirects unauthenticated
+    // /admin/* requests to /admin/login with ?redirectTo=<path>. If we
+    // get here without a user, it means the proxy allow-listed us for
+    // some reason — fall back to a plain login redirect.
     if (!user) redirect("/admin/login");
     redirect("/admin/denied");
   }
