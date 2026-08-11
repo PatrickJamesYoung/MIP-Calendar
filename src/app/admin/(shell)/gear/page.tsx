@@ -2,6 +2,11 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { GearReservationRow } from "./_components/gear-reservation-row";
+import {
+  GearReservationsCalendar,
+  type CalendarReservation,
+  type CalendarStatus,
+} from "./_components/gear-reservations-calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -34,12 +39,35 @@ const STATUS_ORDER: Array<ReservationRecord["status"]> = [
   "cancelled",
 ];
 
+// Statuses shown in the calendar (denied and cancelled are hidden).
+const CALENDAR_STATUSES: CalendarStatus[] = [
+  "tentative",
+  "approved",
+  "picked_up",
+  "returned",
+];
+
+type SortKey = "created" | "pickup" | "return";
+type SortDir = "asc" | "desc";
+
+const SORT_COLUMN: Record<SortKey, string> = {
+  created: "created_at",
+  pickup: "pickup_at",
+  return: "return_at",
+};
+
 const PAGE_SIZE = 25;
 
 export default async function AdminGearPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string; page?: string }>;
+  searchParams: Promise<{
+    status?: string;
+    q?: string;
+    page?: string;
+    sort?: string;
+    dir?: string;
+  }>;
 }) {
   await requireAdmin();
   const params = await searchParams;
@@ -51,13 +79,21 @@ export default async function AdminGearPage({
   const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
   const offset = (page - 1) * PAGE_SIZE;
 
+  const sortKey: SortKey =
+    params.sort === "pickup" || params.sort === "return" ? params.sort : "created";
+  // Sensible per-column defaults: created descends (newest first),
+  // pickup/return ascend (soonest first) unless the user overrides.
+  const defaultDir: SortDir = sortKey === "created" ? "desc" : "asc";
+  const sortDir: SortDir =
+    params.dir === "asc" || params.dir === "desc" ? (params.dir as SortDir) : defaultDir;
+
   const supabase = createAdminClient();
 
   // Reservations query
   let query = supabase
     .from("gear_reservations")
     .select("*", { count: "exact" })
-    .order("created_at", { ascending: false })
+    .order(SORT_COLUMN[sortKey], { ascending: sortDir === "asc" })
     .range(offset, offset + PAGE_SIZE - 1);
 
   if (filter) query = query.eq("status", filter);
@@ -132,6 +168,32 @@ export default async function AdminGearPage({
     Math.ceil((totalCount ?? 0) / PAGE_SIZE)
   );
 
+  // Calendar data — pull all non-denied/cancelled reservations across all
+  // time so month navigation can show past and future without a round-trip.
+  // Bounded to a reasonable window (2 years back, 2 years forward) so this
+  // never accidentally blows up if the table grows huge.
+  const calendarWindowStart = new Date(
+    now.getFullYear() - 2,
+    now.getMonth(),
+    1
+  );
+  const calendarWindowEnd = new Date(
+    now.getFullYear() + 2,
+    now.getMonth() + 1,
+    1
+  );
+  const { data: calendarRowsRaw } = await supabase
+    .from("gear_reservations")
+    .select(
+      "id, human_id, status, requester_name, organization, pickup_at, return_at"
+    )
+    .in("status", CALENDAR_STATUSES)
+    .gte("return_at", calendarWindowStart.toISOString())
+    .lt("pickup_at", calendarWindowEnd.toISOString())
+    .order("pickup_at", { ascending: true })
+    .limit(1000);
+  const calendarReservations = (calendarRowsRaw ?? []) as CalendarReservation[];
+
   return (
     <div>
       <h1
@@ -157,14 +219,14 @@ export default async function AdminGearPage({
         {STATUS_ORDER.map((s) => (
           <FilterTab
             key={s}
-            href={buildHref(s, search)}
+            href={buildHref({ status: s, search, sort: sortKey, dir: sortDir })}
             label={labelForStatus(s)}
             count={countsByStatus.get(s) ?? 0}
             active={filter === s}
           />
         ))}
         <FilterTab
-          href={buildHref("all", search)}
+          href={buildHref({ status: "all", search, sort: sortKey, dir: sortDir })}
           label="All"
           count={totalAllStatuses}
           active={filter === null}
@@ -175,6 +237,10 @@ export default async function AdminGearPage({
       <form className="mt-4 flex items-center gap-2" action="/admin/gear" method="get">
         {filter && <input type="hidden" name="status" value={filter} />}
         {!filter && <input type="hidden" name="status" value="all" />}
+        {sortKey !== "created" && <input type="hidden" name="sort" value={sortKey} />}
+        {sortDir !== (sortKey === "created" ? "desc" : "asc") && (
+          <input type="hidden" name="dir" value={sortDir} />
+        )}
         <input
           type="search"
           name="q"
@@ -192,7 +258,12 @@ export default async function AdminGearPage({
         </button>
         {search && (
           <Link
-            href={buildHref(filter ?? "all", "")}
+            href={buildHref({
+              status: filter ?? "all",
+              search: "",
+              sort: sortKey,
+              dir: sortDir,
+            })}
             className="text-xs text-mip-gray-500 hover:text-mip-gray-700 underline"
           >
             Clear
@@ -220,8 +291,22 @@ export default async function AdminGearPage({
                   <th className="px-3 py-2 font-medium">ID</th>
                   <th className="px-3 py-2 font-medium">Requester</th>
                   <th className="px-3 py-2 font-medium">Event</th>
-                  <th className="px-3 py-2 font-medium">Pickup</th>
-                  <th className="px-3 py-2 font-medium">Return</th>
+                  <SortableHeader
+                    label="Pickup"
+                    columnKey="pickup"
+                    activeSort={sortKey}
+                    activeDir={sortDir}
+                    filter={filter}
+                    search={search}
+                  />
+                  <SortableHeader
+                    label="Return"
+                    columnKey="return"
+                    activeSort={sortKey}
+                    activeDir={sortDir}
+                    filter={filter}
+                    search={search}
+                  />
                   <th className="px-3 py-2 font-medium text-right">Contribution</th>
                   <th className="px-3 py-2 font-medium text-center">Items</th>
                   <th className="px-3 py-2 font-medium">Status</th>
@@ -247,12 +332,24 @@ export default async function AdminGearPage({
               </span>
               <div className="flex items-center gap-2">
                 <PageLink
-                  href={buildHref(filter ?? "all", search, page - 1)}
+                  href={buildHref({
+                    status: filter ?? "all",
+                    search,
+                    sort: sortKey,
+                    dir: sortDir,
+                    page: page - 1,
+                  })}
                   label="Previous"
                   disabled={page <= 1}
                 />
                 <PageLink
-                  href={buildHref(filter ?? "all", search, page + 1)}
+                  href={buildHref({
+                    status: filter ?? "all",
+                    search,
+                    sort: sortKey,
+                    dir: sortDir,
+                    page: page + 1,
+                  })}
                   label="Next"
                   disabled={page >= totalPages}
                 />
@@ -261,6 +358,9 @@ export default async function AdminGearPage({
           )}
         </>
       )}
+
+      {/* Calendar view */}
+      <GearReservationsCalendar reservations={calendarReservations} />
     </div>
   );
 }
@@ -282,17 +382,72 @@ function labelForStatus(s: ReservationRecord["status"]): string {
   }
 }
 
-function buildHref(
-  status: string,
-  search: string,
-  page?: number
-): string {
+interface HrefOpts {
+  status: string;
+  search: string;
+  sort: SortKey;
+  dir: SortDir;
+  page?: number;
+}
+
+function buildHref(opts: HrefOpts): string {
+  const { status, search, sort, dir, page } = opts;
   const p = new URLSearchParams();
   if (status && status !== "tentative") p.set("status", status);
   if (search) p.set("q", search);
+  if (sort !== "created") p.set("sort", sort);
+  const defaultDir: SortDir = sort === "created" ? "desc" : "asc";
+  if (dir !== defaultDir) p.set("dir", dir);
   if (page && page > 1) p.set("page", String(page));
   const q = p.toString();
   return q ? `/admin/gear?${q}` : "/admin/gear";
+}
+
+function SortableHeader({
+  label,
+  columnKey,
+  activeSort,
+  activeDir,
+  filter,
+  search,
+}: {
+  label: string;
+  columnKey: SortKey;
+  activeSort: SortKey;
+  activeDir: SortDir;
+  filter: ReservationRecord["status"] | null;
+  search: string;
+}) {
+  const isActive = activeSort === columnKey;
+  // Clicking an inactive column applies that column's default direction.
+  // Clicking the active column flips direction.
+  const defaultDir: SortDir = columnKey === "created" ? "desc" : "asc";
+  const nextDir: SortDir = isActive
+    ? activeDir === "asc"
+      ? "desc"
+      : "asc"
+    : defaultDir;
+  const href = buildHref({
+    status: filter ?? "all",
+    search,
+    sort: columnKey,
+    dir: nextDir,
+  });
+  return (
+    <th className="px-3 py-2 font-medium">
+      <Link
+        href={href}
+        className={`inline-flex items-center gap-1 hover:text-mip-gray-800 ${
+          isActive ? "text-mip-gray-800" : ""
+        }`}
+      >
+        <span>{label}</span>
+        <span className="text-[10px] leading-none" aria-hidden>
+          {isActive ? (activeDir === "asc" ? "▲" : "▼") : "↕"}
+        </span>
+      </Link>
+    </th>
+  );
 }
 
 function Kpi({ label, value }: { label: string; value: number }) {
