@@ -14,7 +14,7 @@ export default async function SubscribePage() {
     .order("sort_order");
 
   const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ?? "https://mip-calendar.vercel.app";
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://app.movementinfrastructureproject.org";
 
   return (
     <div className="min-h-screen flex flex-col">

@@ -268,7 +268,7 @@ export async function submitEventAction(
 
   // Email (fire-and-forget — don't block the response)
   const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ?? "https://mip-calendar.vercel.app";
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://app.movementinfrastructureproject.org";
   Promise.allSettled([
     emailSubmitterReceived({
       submitterName: data.submitter_name,

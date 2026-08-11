@@ -138,7 +138,7 @@ export async function approveSubmissionAction(
 
   // Email submitter (best-effort)
   const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ?? "https://mip-calendar.vercel.app";
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://app.movementinfrastructureproject.org";
   emailSubmitterApproved({
     submitterName: sub.submitter_name,
     submitterEmail: sub.submitter_email,
