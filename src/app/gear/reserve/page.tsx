@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { MipSiteHeader } from "@/components/mip-site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { ReserveForm } from "./reserve-form";
 import { parseCart } from "./cart";
-import { EmbedResizer } from "../embed-resizer";
 
 export const dynamic = "force-dynamic";
 
@@ -106,8 +107,12 @@ export default async function ReservePage({
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null;
 
   return (
-    <main className="mx-auto w-full px-6 py-8" style={{ maxWidth: "820px" }}>
-      <EmbedResizer />
+    <div className="min-h-screen flex flex-col">
+      <MipSiteHeader />
+      <main
+        className="mx-auto w-full px-6 py-8 flex-1"
+        style={{ maxWidth: "820px" }}
+      >
       <div className="text-sm mb-4">
         <Link
           href="/gear"
@@ -159,6 +164,8 @@ export default async function ReservePage({
           turnstileSiteKey={turnstileSiteKey}
         />
       )}
-    </main>
+      </main>
+      <SiteFooter />
+    </div>
   );
 }
