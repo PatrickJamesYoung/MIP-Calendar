@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { CalendarEvent, OverlayCalendar } from "@/lib/types";
 import { FeaturedBar } from "./featured-bar";
 import { FeedView } from "./feed-view";
@@ -24,10 +24,11 @@ type ViewMode = "feed" | "3day" | "week" | "month";
  */
 export function CalendarShell({ events, overlays }: CalendarShellProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   // Read initial view/anchor from URL so links are shareable.
-  // Week is the default when the user lands with no ?view= param.
+  // Feed is the default when the user lands with no ?view= param.
   const initialView = (searchParams.get("view") as ViewMode | null) ?? "feed";
   const initialDate = searchParams.get("date") ?? todayYmd();
 
@@ -37,22 +38,32 @@ export function CalendarShell({ events, overlays }: CalendarShellProps) {
   const [anchorYmd, setAnchorYmd] = useState<string>(initialDate);
 
   // Sync state back to URL (shallow — doesn't refetch server data).
-  // Week is the default view, so we omit its params from the URL to keep
-  // /calendar clean; other views always carry both params.
+  // Feed is the default view, so we omit its params from the URL to keep
+  // the path clean; other views always carry both params.
+  // Preserve the current pathname ("/", "/calendar", "/embed", …) instead
+  // of hard-coding "/" — otherwise on /calendar we'd bounce to / which
+  // redirects back to /calendar, causing an infinite view-toggle loop.
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
-    if (view === "week") {
+    if (view === "feed") {
       params.delete("view");
       params.delete("date");
-    } else if (view === "feed") {
-      params.set("view", "feed");
+    } else if (view === "week") {
+      params.set("view", "week");
       params.delete("date");
     } else {
       params.set("view", view);
       params.set("date", anchorYmd);
     }
     const qs = params.toString();
-    router.replace(qs ? `/?${qs}` : "/", { scroll: false });
+    const nextUrl = qs ? `${pathname}?${qs}` : pathname;
+    // Only replace if the URL would actually change — avoids a redundant
+    // navigation on the very first render.
+    const currentQs = searchParams.toString();
+    const currentUrl = currentQs ? `${pathname}?${currentQs}` : pathname;
+    if (nextUrl !== currentUrl) {
+      router.replace(nextUrl, { scroll: false });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, anchorYmd]);
 
