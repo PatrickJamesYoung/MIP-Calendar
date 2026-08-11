@@ -188,7 +188,7 @@ function buildDescription(event: CalendarEvent): string {
   if (event.cost) parts.push(`Cost: ${event.cost}`);
   if (event.slug) {
     const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ?? "https://mip-calendar.vercel.app";
+      process.env.NEXT_PUBLIC_SITE_URL ?? "https://app.movementinfrastructureproject.org";
     parts.push(`More info: ${siteUrl}/e/${event.slug}`);
   }
   return parts.join("\n\n");

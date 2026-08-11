@@ -113,7 +113,7 @@ function ListCard({ event }: { event: CalendarEvent }) {
 
   return (
     <Link
-      href={`https://mip-calendar.vercel.app/e/${event.slug}`}
+      href={`https://app.movementinfrastructureproject.org/e/${event.slug}`}
       target="_top"
       className="bg-mip-white border border-mip-gray-200 hover:border-mip-purple transition-colors p-3 flex gap-3"
       style={{ borderRadius: "var(--radius-button)" }}
@@ -208,7 +208,7 @@ function StripCard({ event }: { event: CalendarEvent }) {
 
   return (
     <Link
-      href={`https://mip-calendar.vercel.app/e/${event.slug}`}
+      href={`https://app.movementinfrastructureproject.org/e/${event.slug}`}
       target="_top"
       className="snap-start shrink-0 w-72 bg-mip-white border border-mip-gray-200 hover:border-mip-purple transition-colors p-2.5 flex gap-2"
       style={{ borderRadius: "var(--radius-button)" }}
