@@ -9,7 +9,16 @@ import { createClient } from "@/lib/supabase/server";
  * `redirectTo` if it's a safe internal path.
  */
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url);
+  const url = new URL(request.url);
+  const searchParams = url.searchParams;
+  // On Vercel behind the edge, request.url may reflect the internal origin.
+  // Prefer x-forwarded-* headers so the final redirect lands on the same
+  // host the user is actually browsing.
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
+  const origin = forwardedHost
+    ? `${forwardedProto}://${forwardedHost}`
+    : url.origin;
   const code = searchParams.get("code");
 
   // Prefer the query param, but fall back to the cookie the login form
