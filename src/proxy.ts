@@ -31,12 +31,28 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url, 308);
   }
 
+  // Skip the Supabase session-cookie refresh for API routes.
+  //
+  // API routes handle their own auth (bearer tokens for /api/ingest/*,
+  // Turnstile for public POSTs, service-role clients elsewhere) and never
+  // read the SSR session cookie. Running updateSession() on every ingest
+  // webhook, view-count beacon, and ICS download would be pure overhead
+  // and can leak cookie work into responses meant for machines.
+  //
+  // NOTE: we still keep API paths in the matcher below so the host
+  // redirect above catches any lingering `calendar.*` API traffic.
+  const path = request.nextUrl.pathname;
+  if (path.startsWith("/api/")) {
+    return NextResponse.next();
+  }
+
   return await updateSession(request);
 }
 
 export const config = {
   matcher: [
-    // Skip Next internals and static assets.
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Skip Next internals and static assets, but keep API routes in scope
+    // so the host redirect above still applies.
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml)$).*)",
   ],
 };

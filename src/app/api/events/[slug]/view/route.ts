@@ -11,16 +11,37 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
+import { checkRateLimit, clientIpFromHeaders } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Cheap in-process limiter. 120 hits per minute per IP is well above any
+// legitimate page-view beacon rate and cuts off trivially scripted floods.
+const VIEW_RATE_LIMIT = {
+  name: "event-view",
+  max: 120,
+  windowMs: 60 * 1000,
+} as const;
+
 export async function POST(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await ctx.params;
   if (!slug) return Response.json({ error: "missing slug" }, { status: 400 });
+
+  const ip = clientIpFromHeaders(req.headers);
+  const rl = checkRateLimit(ip, VIEW_RATE_LIMIT);
+  if (!rl.ok) {
+    return Response.json(
+      { error: "rate_limited", retry_in_sec: rl.retryInSec },
+      {
+        status: 429,
+        headers: { "Retry-After": String(rl.retryInSec) },
+      }
+    );
+  }
 
   const supabase = await createClient();
 

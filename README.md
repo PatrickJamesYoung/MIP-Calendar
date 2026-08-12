@@ -1,92 +1,132 @@
-# MIP Movement Calendar
+# MIP Admin Portal
 
-Replacement for the Trumba-based calendar currently embedded at [movementinfrastructureproject.org/calendar](https://www.movementinfrastructureproject.org/calendar).
+The Movement Infrastructure Project's central operations tool. Runs the public
+movement calendar, the gear-lending storefront, an internal wiki, and the
+admin console that ties them together.
 
-Built with **Next.js 15 + Supabase + Tailwind CSS**. Designed to be iframed into the existing Squarespace site.
+- **Public calendar** — [app.movementinfrastructureproject.org/calendar](https://app.movementinfrastructureproject.org/calendar)
+- **Public gear storefront** — [app.movementinfrastructureproject.org/gear](https://app.movementinfrastructureproject.org/gear)
+- **Admin console** — `/admin` (Supabase auth-gated)
+- **Iframe embed** — `/embed` (loaded by the Squarespace marketing site)
 
-## Milestone status
+Built with **Next.js 16 (App Router) + React 19 + Supabase + Tailwind CSS**,
+deployed on Vercel with Node 24.x.
 
-- ✅ **M1 — Foundation & public read-only calendar** (in progress)
-  - Repo scaffold, brand tokens, Supabase schema
-  - Feed view with sample data
-  - Featured bar
-  - Event cards with priority badges, accessibility tags, overlay color coding
-- ⏳ M2 — Admin backend + submissions + CSV
-- ⏳ M3 — Trumba migration + Squarespace cutover
+## Product surface
+
+| Area | Path | What it does |
+|---|---|---|
+| Calendar (public) | `/calendar` | Feed + agenda view of published events across overlays |
+| Event detail | `/e/[slug]` | Public page + ICS download at `/e/[slug]/ics` |
+| Feed | `/calendar.ics` | Full published-events iCal feed with `?overlay=` filter |
+| Submissions | `/submit` | Turnstile-guarded public event submission form |
+| Subscribe | `/subscribe` | Buttondown signup for the DC Daybook / Weekly Planner |
+| Gear (public) | `/gear` | Browse + reserve MIP equipment |
+| Admin | `/admin` | Event triage, gear reservations, wiki editor |
+| Ingest API | `/api/ingest/*` | Bearer-token endpoints called by the GHA daily ingest |
 
 ## Local development
 
 ```bash
-# 1. Install dependencies
+# 1. Install dependencies (Node 24.x required)
 npm install
 
-# 2. Copy env template and fill in Supabase secrets
+# 2. Copy env template and fill in secrets
 cp .env.example .env.local
-# → open .env.local and paste your Supabase anon key + service role key
+# → open .env.local and set at minimum:
+#     NEXT_PUBLIC_SUPABASE_URL
+#     NEXT_PUBLIC_SUPABASE_ANON_KEY
+#     SUPABASE_SERVICE_ROLE_KEY
+#     NEXT_PUBLIC_SITE_URL (e.g. http://localhost:3000 for dev)
 
 # 3. Run the dev server
 npm run dev
-
 # → http://localhost:3000
 ```
 
-## Supabase setup
+See [`.env.example`](./.env.example) for the full list of environment
+variables (email, Turnstile, ingest bearer token, etc.).
 
-1. Sign in at [supabase.com](https://supabase.com) → your MIP project
-2. Go to **SQL Editor** → **New Query**
-3. Paste the contents of `supabase/migrations/0001_initial_schema.sql`
-4. Click **Run** — this creates all tables, indexes, RLS policies, and seed data
-5. Go to **Settings → Data API** and copy the `anon` and `service_role` keys into `.env.local`
+## Supabase
 
-## Deployment (Vercel)
+Single unified project: `oqnratorzgejmjqzyubi` (production).
 
-1. Push this repo to GitHub (it's already at `PatrickJamesYoung/MIP-Calendar`)
-2. Go to [vercel.com/new](https://vercel.com/new) → import the repo
-3. Add environment variables (Vercel dashboard → Project → Settings → Environment Variables):
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-4. Deploy
+Migrations live in [`supabase/migrations/`](./supabase/migrations) and are
+applied by hand via the Supabase SQL editor:
+
+- `0001_initial_schema.sql` — calendar core (events, overlays, submissions)
+- `0002_ingestion.sql` — ingest sources + submissions pipeline
+- `0100_gear_schema.sql` — gear items, bundles, reservations, email log
+- `0101_gear_activity.sql` — reservation activity ledger
+- `0102_gear_followup_and_electricity.sql` — follow-up emails + electricity flag
+- `0200_wiki_schema.sql` — internal wiki pages + revisions
+- `0201_wiki_seed_mip_operations.sql` — seed content
+- `0202_wiki_search_rpc.sql` / `0203_wiki_search_rpc_html_safe.sql` — FTS
+
+## Deployment
+
+Single Vercel project (`mip-calendar`) tied to `main`. Canonical host:
+
+- `app.movementinfrastructureproject.org` (production)
+- `calendar.movementinfrastructureproject.org` → 308 redirect to `app.*`
+
+Preview deployments run on every branch. Environment variables are set in the
+Vercel dashboard under Project → Settings → Environment Variables.
+
+## Daily ingest (GitHub Actions)
+
+`.github/workflows/ingest.yml` runs every day at 16:00 UTC (noon EDT / 11am
+EST). Fetches DC-area movement events, runs the LLM classifier, dedupes, and
+posts to `/api/ingest/submissions`. Runner is idempotent so a 1-hour DST
+drift is fine — see the workflow comment.
+
+See [`ingest/README.md`](./ingest/README.md) for the Python source layout.
 
 ## Project structure
 
 ```
-mip-calendar/
-├── src/
-│   ├── app/                    # Next.js App Router pages
-│   │   ├── layout.tsx          # Root layout (loads Work Sans, sets metadata)
-│   │   ├── page.tsx            # Home = Feed view of upcoming events
-│   │   └── globals.css         # Tailwind + MIP design tokens
-│   ├── components/             # React components
-│   │   ├── site-header.tsx     # Sticky top nav (matches MIP branding)
-│   │   ├── site-footer.tsx     # Black footer with org name + email
-│   │   ├── featured-bar.tsx    # Yellow priority-events strip
-│   │   ├── event-card.tsx      # Feed event tile
-│   │   └── feed-view.tsx       # Scrolling feed with day dividers
-│   └── lib/
-│       ├── supabase/           # Client + server Supabase helpers
-│       ├── types.ts            # Shared TypeScript types
-│       ├── utils.ts            # Date/time formatting, groupBy helpers
-│       └── sample-data.ts      # Dev-only sample events (delete post-migration)
-├── supabase/
-│   ├── migrations/             # Versioned SQL migrations
-│   └── seed/                   # Reference seed data (already inlined in 0001)
-├── .env.example                # Env template — copy to .env.local
-└── README.md
+src/
+├── app/
+│   ├── admin/         # Auth-gated console (events, gear, wiki, submissions)
+│   ├── api/           # Route handlers — ingest, event views, gear actions
+│   ├── auth/          # Supabase auth callback routes
+│   ├── calendar/      # Public calendar page
+│   ├── calendar.ics/  # iCal feed
+│   ├── e/[slug]/      # Public event detail + per-event ICS
+│   ├── embed/         # Iframe-safe calendar (no header/footer)
+│   ├── gear/          # Public gear storefront
+│   ├── submit/        # Public event submission form
+│   └── subscribe/     # Buttondown signup
+├── components/        # Shared React components
+├── lib/
+│   ├── supabase/      # Browser, server, and admin clients
+│   ├── email.ts       # Resend transactional email
+│   ├── rate-limit.ts  # Shared in-process rate limiter
+│   ├── turnstile.ts   # Cloudflare Turnstile verification
+│   └── types.ts       # Shared types
+└── proxy.ts           # Next 16 middleware: host redirect + auth refresh
+
+supabase/migrations/   # Versioned SQL migrations (see above)
+ingest/                # Python ingest bot (run from GHA)
+scripts/               # One-off maintenance scripts
 ```
 
 ## Design tokens
-
-Pulled directly from the MIP Squarespace site:
 
 | Token | Value | Use |
 |---|---|---|
 | `--color-mip-purple` | `#39375b` | Primary brand color, buttons, headlines |
 | `--color-mip-yellow` | `#c2e812` | Signature acid green — featured bar bg |
 | `--color-mip-cyan`   | `#2de0fb` | Accent — accessibility tags |
-| Font | Work Sans | Everything |
+| Font | Work Sans (public), Inter (admin) | |
 | Button radius | `6.8px` | Matches Squarespace-computed radius |
+
+## Architecture audit
+
+Ongoing cleanup and hardening is tracked in the shared project docs. The
+2026-08-12 audit lives in the MIP Tools project files under
+`docs/mip-admin-portal-audit-2026-08-12.md`.
 
 ## License
 
-TBD — this is MIP-owned code. All rights reserved until MIP chooses otherwise.
+MIP-owned code. All rights reserved until MIP chooses otherwise.
