@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Menu, X } from "lucide-react";
+import { CalendarPlus, ChevronDown, Menu, X } from "lucide-react";
 
 /**
  * Header that mirrors movementinfrastructureproject.org so this app feels
@@ -149,6 +149,16 @@ export function MipSiteHeader() {
               </a>
             )
           )}
+
+          {/* Persistent Subscribe CTA — always visible top-right on desktop */}
+          <a
+            href="/subscribe"
+            className="ml-2 inline-flex items-center gap-1.5 rounded-full bg-mip-purple px-4 py-2 text-[14px] font-medium text-white hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: "var(--color-mip-purple)" }}
+          >
+            <CalendarPlus className="h-4 w-4" aria-hidden />
+            Subscribe
+          </a>
         </nav>
 
         {/* Mobile hamburger — visible <800px */}
@@ -171,6 +181,15 @@ export function MipSiteHeader() {
             className="mx-auto flex flex-col px-6 py-4"
             style={{ maxWidth: "1200px" }}
           >
+            {/* Persistent Subscribe CTA at top of mobile drawer */}
+            <a
+              href="/subscribe"
+              className="mb-3 inline-flex items-center justify-center gap-2 rounded-full bg-mip-purple px-4 py-3 text-[15px] font-medium text-white"
+              style={{ backgroundColor: "var(--color-mip-purple)" }}
+            >
+              <CalendarPlus className="h-4 w-4" aria-hidden />
+              Subscribe to calendar
+            </a>
             {NAV.map((item) => (
               <MobileItem key={item.label} item={item} />
             ))}
