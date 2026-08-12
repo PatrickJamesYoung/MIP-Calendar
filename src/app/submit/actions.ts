@@ -9,6 +9,7 @@ import {
   emailSubmitterReceived,
 } from "@/lib/email";
 import { uploadSubmissionImage } from "@/lib/storage";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set([
@@ -85,28 +86,13 @@ function localToUtcIso(localStr: string, tz = "America/New_York"): string {
   return new Date(naive.getTime() - offsetMs).toISOString();
 }
 
-/**
- * Simple in-process rate limit — 5 submissions per IP per hour.
- * Reset on server restart, which is fine for a first pass. Later we can
- * back this with the submissions table itself (count rows by ip_address).
- */
-const RATE_LIMIT_MAX = 5;
-const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
-const rateBucket = new Map<string, { count: number; resetAt: number }>();
-
-function checkRateLimit(ip: string): { ok: boolean; retryInSec?: number } {
-  const now = Date.now();
-  const entry = rateBucket.get(ip);
-  if (!entry || entry.resetAt < now) {
-    rateBucket.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return { ok: true };
-  }
-  if (entry.count >= RATE_LIMIT_MAX) {
-    return { ok: false, retryInSec: Math.ceil((entry.resetAt - now) / 1000) };
-  }
-  entry.count++;
-  return { ok: true };
-}
+// Rate limit — 5 submissions per IP per hour. See src/lib/rate-limit.ts
+// for the shared bucket implementation.
+const SUBMIT_RATE_LIMIT = {
+  name: "submit",
+  max: 5,
+  windowMs: 60 * 60 * 1000,
+} as const;
 
 export async function submitEventAction(
   formData: FormData
@@ -127,12 +113,12 @@ export async function submitEventAction(
   }
 
   // Rate limit
-  const rate = checkRateLimit(ip);
+  const rate = checkRateLimit(ip, SUBMIT_RATE_LIMIT);
   if (!rate.ok) {
     return {
       ok: false,
       error: `Too many submissions. Try again in ${Math.ceil(
-        (rate.retryInSec ?? 0) / 60
+        rate.retryInSec / 60
       )} minutes.`,
     };
   }
