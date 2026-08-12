@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CalendarPlus, PenLine } from "lucide-react";
 import { MipSiteHeader } from "@/components/mip-site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { CalendarShell } from "@/components/calendar-shell";
@@ -91,6 +92,34 @@ export default async function CalendarPage() {
             </Link>
             !
           </p>
+        </div>
+      </section>
+
+      {/* Conspicuous action bar — subscribe + submit, above the calendar */}
+      <section
+        className="mx-auto w-full px-6 pb-6"
+        style={{ maxWidth: "1200px" }}
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <Link
+            href="/subscribe"
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-mip-purple px-5 py-3 text-[15px] font-medium text-white hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: "var(--color-mip-purple)" }}
+          >
+            <CalendarPlus className="h-4 w-4" aria-hidden />
+            Subscribe to calendar
+          </Link>
+          <Link
+            href="/submit"
+            className="inline-flex items-center justify-center gap-2 rounded-full border-2 px-5 py-3 text-[15px] font-medium hover:bg-mip-purple hover:text-white transition-colors"
+            style={{
+              borderColor: "var(--color-mip-purple)",
+              color: "var(--color-mip-purple)",
+            }}
+          >
+            <PenLine className="h-4 w-4" aria-hidden />
+            Submit an event
+          </Link>
         </div>
       </section>
 
