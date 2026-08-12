@@ -1,17 +1,20 @@
 # Cron support scripts
 
-Data-source fetchers that the Perplexity Computer cron tasks call as a
-preflight step before their agent LLM work.
+Reference implementations of the data-source fetches used by the
+Perplexity Computer cron tasks.
 
-Extracting these into version-controlled scripts serves three goals:
+**Note on runtime status.** Perplexity Computer background crons run in
+isolated sandboxes without access to this repo's filesystem, so the
+cron tasks currently embed this Python inline. These scripts serve as:
 
-1. **Prompt-size reduction.** The Daybook and Weekly Planner cron tasks
-   used to embed ~10,000 chars of Python inline. That prompt gets billed
-   on every fire.
-2. **Testability.** Each script has a smoke-test target that hits real
-   sources. Broken parsers get caught before they hit production.
-3. **Diffability.** Parser tweaks show up in `git log` instead of
-   living inside a cron task's opaque `task` field.
+1. **The canonical parser reference** — the cron inline copies must stay
+   in sync with these files.
+2. **A local test harness** — you can smoke-test parser changes here
+   against real sources before propagating them to the cron task text.
+3. **A future hosting target** — if we later publish these as static
+   assets from `app.movementinfrastructureproject.org/scripts/*` or
+   the GitHub raw URL, the cron tasks can `curl | python3 -` instead
+   of embedding the code inline.
 
 ## Scripts
 
