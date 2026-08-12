@@ -4,7 +4,6 @@ import { MipSiteHeader } from "@/components/mip-site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { CalendarShell } from "@/components/calendar-shell";
 import { createClient } from "@/lib/supabase/server";
-import { SAMPLE_EVENTS, SAMPLE_OVERLAYS } from "@/lib/sample-data";
 import type { CalendarEvent, OverlayCalendar } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +22,7 @@ export default async function CalendarPage() {
   const endWindow = new Date();
   endWindow.setFullYear(endWindow.getFullYear() + 1);
 
-  const [{ data: overlays }, { data: events }] = await Promise.all([
+  const [{ data: overlays, error: overlaysError }, { data: events, error: eventsError }] = await Promise.all([
     supabase.from("overlay_calendars").select("*").order("sort_order"),
     supabase
       .from("events")
@@ -37,11 +36,13 @@ export default async function CalendarPage() {
       .limit(2000),
   ]);
 
-  const hasData = (events?.length ?? 0) > 0 && (overlays?.length ?? 0) > 0;
-  const displayEvents = (hasData ? events : SAMPLE_EVENTS) as CalendarEvent[];
-  const displayOverlays = (hasData
-    ? overlays
-    : SAMPLE_OVERLAYS) as OverlayCalendar[];
+  // Fail loudly to the console on real errors so we can spot them in Vercel
+  // logs. Public users see the empty state below, not fake sample events.
+  if (overlaysError) console.error("[calendar] overlays fetch failed:", overlaysError);
+  if (eventsError) console.error("[calendar] events fetch failed:", eventsError);
+
+  const displayEvents = (events ?? []) as CalendarEvent[];
+  const displayOverlays = (overlays ?? []) as OverlayCalendar[];
 
   return (
     <div className="min-h-screen flex flex-col">

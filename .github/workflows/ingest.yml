@@ -1,9 +1,14 @@
 name: Daily DC events ingest
 
 on:
-  # Daily at 16:00 UTC = noon EDT year-round.
-  # During EST months (Nov–Mar) this becomes 11 AM ET, which is fine.
-  # GitHub Actions cron runs in UTC and does not follow DST.
+  # Daily at 16:00 UTC.
+  # - EDT months (Mar–Nov): fires at 12:00 noon ET
+  # - EST months (Nov–Mar): fires at 11:00 AM ET
+  # This 1-hour DST drift is intentional and safe — the runner is idempotent
+  # and no downstream consumer cares about the exact hour. See the 2026-08-12
+  # audit (mip-admin-portal-audit) P1-6 for the decision to accept the drift
+  # rather than adding dual-schedule complexity.
+  # GitHub Actions cron always runs in UTC and does not follow DST.
   schedule:
     - cron: '0 16 * * *'
   workflow_dispatch:
