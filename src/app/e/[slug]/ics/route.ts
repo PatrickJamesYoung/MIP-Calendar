@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createEvent, type EventAttributes } from "ics";
 import { createClient } from "@/lib/supabase/server";
-import { SAMPLE_EVENTS } from "@/lib/sample-data";
 import type { CalendarEvent } from "@/lib/types";
 
 /**
@@ -21,10 +20,7 @@ export async function GET(
     .eq("status", "published")
     .maybeSingle();
 
-  const event =
-    (data as CalendarEvent | null) ??
-    (SAMPLE_EVENTS as CalendarEvent[]).find((e) => e.slug === slug) ??
-    null;
+  const event = data as CalendarEvent | null;
 
   if (!event) {
     return new NextResponse("Event not found", { status: 404 });

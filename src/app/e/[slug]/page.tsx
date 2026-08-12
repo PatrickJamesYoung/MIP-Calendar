@@ -23,7 +23,6 @@ import type {
   OverlayCalendar,
   EventType,
 } from "@/lib/types";
-import { SAMPLE_EVENTS } from "@/lib/sample-data";
 import { prepareDescription } from "@/lib/event-description";
 import { TrackView } from "./track-view";
 
@@ -31,11 +30,6 @@ export const dynamic = "force-dynamic";
 
 interface Props {
   params: Promise<{ slug: string }>;
-}
-
-// Sample events use hard-coded slugs — allow deep-linking to them in dev/preview.
-function findInSampleData(slug: string): CalendarEvent | null {
-  return (SAMPLE_EVENTS as CalendarEvent[]).find((e) => e.slug === slug) ?? null;
 }
 
 export default async function EventDetailPage({ params }: Props) {
@@ -49,7 +43,7 @@ export default async function EventDetailPage({ params }: Props) {
     .eq("status", "published")
     .maybeSingle();
 
-  const resolved = (event as CalendarEvent | null) ?? findInSampleData(slug);
+  const resolved = event as CalendarEvent | null;
 
   if (!resolved) notFound();
 
