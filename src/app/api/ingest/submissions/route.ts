@@ -31,7 +31,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { checkIngestAuth } from "@/lib/ingest/auth";
+import { withIngestAuth } from "@/lib/ingest/handler";
 import { normalizeRunnerEvent, type RunnerEvent } from "@/lib/ingest/normalize";
 
 export const runtime = "nodejs";
@@ -81,17 +81,10 @@ interface PostBody {
   events?: RunnerEvent[];
 }
 
-export async function POST(req: Request) {
-  const auth = checkIngestAuth(req);
-  if (!auth.ok) return auth.response;
-
-  let body: PostBody;
-  try {
-    body = (await req.json()) as PostBody;
-  } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+export const POST = withIngestAuth<PostBody>(async ({ body }) => {
+  if (!body) {
+    return Response.json({ error: "Missing JSON body" }, { status: 400 });
   }
-
   const events = body.events;
   if (!Array.isArray(events)) {
     return Response.json(
@@ -227,4 +220,4 @@ export async function POST(req: Request) {
     auto_submit_count: autoSubmitCount,
     by_source: bySource,
   });
-}
+});

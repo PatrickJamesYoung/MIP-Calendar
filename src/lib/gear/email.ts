@@ -6,16 +6,19 @@
  * `organization_name`, `donation_url`, and `tentative_disclaimer` come
  * from `gear_settings`.
  *
+ * Uses the shared Resend transport in `src/lib/email/resend-client.ts`.
+ *
  * Config (env):
  *   RESEND_API_KEY  — shared with the calendar's email helper
  *   GEAR_EMAIL_FROM — e.g. "MIP Gear Library <gear@send.movementinfrastructureproject.org>"
  *   GEAR_REPLY_TO   — e.g. "info@movementinfrastructureproject.org"
  *
- * If RESEND_API_KEY or GEAR_EMAIL_FROM is missing, sends no-op with a
- * warning so admin actions don't crash in dev / preview environments.
+ * If `RESEND_API_KEY` is missing, the shared transport no-ops. If
+ * `GEAR_EMAIL_FROM` is missing, this module short-circuits with a
+ * distinct "gear-email-from-not-set" error so admin actions don't crash.
  */
 
-import { Resend } from "resend";
+import { resendSend, escapeHtml } from "@/lib/email/resend-client";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type GearEmailTemplateKey =
@@ -24,11 +27,8 @@ export type GearEmailTemplateKey =
   | "deny"
   | "followup";
 
-const apiKey = process.env.RESEND_API_KEY;
 const FROM = process.env.GEAR_EMAIL_FROM ?? "";
 const REPLY_TO = process.env.GEAR_REPLY_TO ?? "";
-
-const client = apiKey ? new Resend(apiKey) : null;
 
 interface ReservationLike {
   id: string;
@@ -129,13 +129,6 @@ export async function sendGearRawEmail(args: {
   subject: string;
   bodyText: string;
 }): Promise<SendResult> {
-  if (!client) {
-    console.warn(
-      "[gear-email] RESEND_API_KEY not set — skipping send",
-      args.reservation.human_id
-    );
-    return { ok: false, error: "email-not-configured", subject: args.subject };
-  }
   if (!FROM) {
     console.warn(
       "[gear-email] GEAR_EMAIL_FROM not set — skipping send",
@@ -150,22 +143,17 @@ export async function sendGearRawEmail(args: {
 
   const bodyHtml = textToHtml(args.bodyText);
 
-  try {
-    const emailOpts: Parameters<typeof client.emails.send>[0] = {
-      from: FROM,
-      to: args.reservation.requester_email,
-      subject: args.subject,
-      html: bodyHtml,
-      text: args.bodyText,
-    };
-    if (REPLY_TO) emailOpts.replyTo = REPLY_TO;
+  const result = await resendSend({
+    from: FROM,
+    to: args.reservation.requester_email,
+    subject: args.subject,
+    html: bodyHtml,
+    text: args.bodyText,
+    replyTo: REPLY_TO || undefined,
+    logTag: args.reservation.human_id,
+  });
 
-    const { error } = await client.emails.send(emailOpts);
-    if (error) return { ok: false, error: error.message, subject: args.subject };
-    return { ok: true, subject: args.subject };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message, subject: args.subject };
-  }
+  return { ...result, subject: args.subject };
 }
 
 export async function sendGearTemplateEmail(args: {
@@ -232,15 +220,6 @@ function buildPlaceholders(
 
 function render(template: string, ctx: Record<string, string>): string {
   return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => ctx[key] ?? "");
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 /**

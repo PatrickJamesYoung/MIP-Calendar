@@ -1,27 +1,24 @@
 /**
- * Transactional email via Resend.
+ * Calendar transactional email helpers.
+ *
+ * Wraps the shared Resend transport in `src/lib/email/resend-client.ts`
+ * with the calendar-side templates: submitter notifications, admin
+ * new-submission alerts, admin ingest-run summaries, and admin invites.
  *
  * Config (env):
- *   RESEND_API_KEY       — API key from resend.com
+ *   RESEND_API_KEY       — API key from resend.com (see resend-client)
  *   EMAIL_FROM           — e.g. "MIP Calendar <calendar@send.movementinfrastructureproject.org>"
  *                          For quick testing you can use "onboarding@resend.dev"
  *   ADMIN_NOTIFY_EMAILS  — comma-separated list of admin emails to CC on new-submission alerts
- *
- * If RESEND_API_KEY is unset, email calls no-op and log a warning. That's
- * intentional — we want the submission flow to still work in dev / preview
- * environments that don't have Resend wired up yet.
  */
 
-import { Resend } from "resend";
+import { resendSend, escapeHtml } from "@/lib/email/resend-client";
 
-const apiKey = process.env.RESEND_API_KEY;
 const FROM = process.env.EMAIL_FROM ?? "MIP Calendar <onboarding@resend.dev>";
 const ADMIN_NOTIFY = (process.env.ADMIN_NOTIFY_EMAILS ?? "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
-
-const client = apiKey ? new Resend(apiKey) : null;
 
 async function send(opts: {
   to: string | string[];
@@ -29,23 +26,13 @@ async function send(opts: {
   html: string;
   text: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  if (!client) {
-    console.warn("[email] RESEND_API_KEY not set — skipping send", opts.subject);
-    return { ok: false, error: "email-not-configured" };
-  }
-  try {
-    const { error } = await client.emails.send({
-      from: FROM,
-      to: opts.to,
-      subject: opts.subject,
-      html: opts.html,
-      text: opts.text,
-    });
-    if (error) return { ok: false, error: error.message };
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
-  }
+  return resendSend({
+    from: FROM,
+    to: opts.to,
+    subject: opts.subject,
+    html: opts.html,
+    text: opts.text,
+  });
 }
 
 /**
@@ -266,11 +253,4 @@ function wrapEmail(preheader: string, body: string): string {
 </html>`;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+
