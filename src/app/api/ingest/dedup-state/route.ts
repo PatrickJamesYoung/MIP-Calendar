@@ -16,7 +16,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { checkIngestAuth } from "@/lib/ingest/auth";
+import { withIngestAuth } from "@/lib/ingest/handler";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,10 +48,7 @@ function toEtDateAndTime(iso: string | null | undefined): {
   return { date, time };
 }
 
-export async function GET(req: Request) {
-  const auth = checkIngestAuth(req);
-  if (!auth.ok) return auth.response;
-
+export const GET = withIngestAuth(async () => {
   const supabase = createAdminClient();
 
   // ---- 1. Published events -----------------------------------------------
@@ -157,4 +154,4 @@ export async function GET(req: Request) {
     { rows, count: rows.length, fetched_at: nowIso },
     { status: 200 }
   );
-}
+});

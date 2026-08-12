@@ -21,8 +21,9 @@
  *   }
  */
 
-import { checkIngestAuth } from "@/lib/ingest/auth";
+import { withIngestAuth } from "@/lib/ingest/handler";
 import { sendAdminEmail } from "@/lib/email";
+import { escapeHtml } from "@/lib/email/resend-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,26 +50,12 @@ interface NotifyBody {
   dry_run?: boolean;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
-export async function POST(req: Request) {
-  const auth = checkIngestAuth(req);
-  if (!auth.ok) return auth.response;
 
-  let body: NotifyBody;
-  try {
-    body = (await req.json()) as NotifyBody;
-  } catch {
-    return Response.json({ error: "invalid JSON body" }, { status: 400 });
-  }
-
+export const POST = withIngestAuth<NotifyBody>(async ({ body: rawBody }) => {
+  // notify accepts empty body (as a bare completion ping) but the caller
+  // always sends a payload today. Treat missing as empty.
+  const body: NotifyBody = rawBody ?? {};
   const status = (body.status ?? "completed").toUpperCase();
   const dryTag = body.dry_run ? " [DRY RUN]" : "";
   const subject = `[MIP ingest ${status}]${dryTag} ${body.subject_suffix ?? ""}`.trim();
@@ -209,4 +196,4 @@ export async function POST(req: Request) {
     );
   }
   return Response.json({ ok: true });
-}
+});

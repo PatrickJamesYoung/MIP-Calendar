@@ -77,3 +77,15 @@ export function clientIpFromHeaders(headers: Headers): string {
     "unknown"
   );
 }
+
+/**
+ * Test helper: clear all buckets between test cases.
+ *
+ * Not exported through any public entry point — imported only by the
+ * Vitest suite. In production this module is only loaded inside route
+ * handlers, so there's no way for it to be called at runtime.
+ */
+export function _resetBucketsForTests(): void {
+  buckets.clear();
+  checksSincePrune = 0;
+}
