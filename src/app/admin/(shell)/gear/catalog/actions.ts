@@ -1,8 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { adminFormAction } from "@/lib/admin/action";
 import { requireAdmin } from "@/lib/auth";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { uploadGearImage } from "@/lib/gear-storage";
 
 const ALLOWED_UNITS = ["per_event", "per_day"] as const;
@@ -48,101 +47,134 @@ function unitField(form: FormData): Unit {
   return raw as Unit;
 }
 
-export async function createGearItem(formData: FormData) {
-  await requireAdmin();
-  const supabase = createAdminClient();
-
-  const name = requiredString(formData, "name", "Name");
-  const slug = stringField(formData, "slug") ?? slugify(name);
-  const quantity_total = numberField(formData, "quantity_total", { min: 0 }) ?? 1;
-  const suggested_contribution =
-    numberField(formData, "suggested_contribution", { min: 0 }) ?? 0;
-
-  const patch = {
-    name,
-    slug,
-    category: stringField(formData, "category"),
-    quantity_total,
-    suggested_contribution,
-    unit: unitField(formData),
-    short_description: stringField(formData, "short_description", { max: 400 }),
-    how_to_use_url: stringField(formData, "how_to_use_url"),
-    photo_url: stringField(formData, "photo_url"),
-    active: formData.get("active") === "on",
-    sort_order: numberField(formData, "sort_order", { min: 0 }) ?? 0,
-    follow_up_question: stringField(formData, "follow_up_question", { max: 500 }),
-    requires_electricity: formData.get("requires_electricity") === "on",
-  };
-
-  const { error } = await supabase.from("gear_items").insert(patch);
-  if (error) throw new Error(`Failed to create item: ${error.message}`);
-
-  revalidatePath("/admin/gear/catalog");
-}
-
-export async function updateGearItem(formData: FormData) {
-  await requireAdmin();
-  const id = requiredString(formData, "id", "id");
-  const supabase = createAdminClient();
-
-  const patch: Record<string, unknown> = {};
-  const stringFields: [string, { max?: number } | undefined][] = [
-    ["name", undefined],
-    ["slug", undefined],
-    ["category", undefined],
-    ["short_description", { max: 400 }],
-    ["how_to_use_url", undefined],
-    ["photo_url", undefined],
-    ["follow_up_question", { max: 500 }],
-  ];
-  for (const [f, opts] of stringFields) {
-    if (formData.has(f)) patch[f] = stringField(formData, f, opts);
-  }
-  if (formData.has("quantity_total"))
-    patch.quantity_total = numberField(formData, "quantity_total", { min: 0 }) ?? 1;
-  if (formData.has("suggested_contribution"))
-    patch.suggested_contribution =
+export const createGearItem = adminFormAction(
+  async ({ supabase }, formData) => {
+    const name = requiredString(formData, "name", "Name");
+    const slug = stringField(formData, "slug") ?? slugify(name);
+    const quantity_total = numberField(formData, "quantity_total", { min: 0 }) ?? 1;
+    const suggested_contribution =
       numberField(formData, "suggested_contribution", { min: 0 }) ?? 0;
-  if (formData.has("unit")) patch.unit = unitField(formData);
-  if (formData.has("sort_order"))
-    patch.sort_order = numberField(formData, "sort_order", { min: 0 }) ?? 0;
-  // Checkboxes: absent = false, "on" = true. Include every time so the form
-  // can uncheck as well as check.
-  patch.active = formData.get("active") === "on";
-  patch.requires_electricity = formData.get("requires_electricity") === "on";
-  patch.updated_at = new Date().toISOString();
 
-  const { error } = await supabase.from("gear_items").update(patch).eq("id", id);
-  if (error) throw new Error(`Failed to update item: ${error.message}`);
+    const patch = {
+      name,
+      slug,
+      category: stringField(formData, "category"),
+      quantity_total,
+      suggested_contribution,
+      unit: unitField(formData),
+      short_description: stringField(formData, "short_description", { max: 400 }),
+      how_to_use_url: stringField(formData, "how_to_use_url"),
+      photo_url: stringField(formData, "photo_url"),
+      active: formData.get("active") === "on",
+      sort_order: numberField(formData, "sort_order", { min: 0 }) ?? 0,
+      follow_up_question: stringField(formData, "follow_up_question", { max: 500 }),
+      requires_electricity: formData.get("requires_electricity") === "on",
+    };
 
-  revalidatePath("/admin/gear/catalog");
-}
+    const { error } = await supabase.from("gear_items").insert(patch);
+    if (error) throw new Error(`Failed to create item: ${error.message}`);
+  },
+  {
+    name: "createGearItem",
+    revalidate: "/admin/gear/catalog",
+    audit: (formData) => ({
+      action: "gear_item.create",
+      entityType: "gear_item",
+      // gear_items.id is DB-generated; log the human-readable slug + name
+      // in the diff jsonb instead. audit_log.entity_id is a uuid column,
+      // so we can't stuff the slug in there.
+      diff: {
+        slug: stringField(formData, "slug"),
+        name: stringField(formData, "name"),
+      },
+    }),
+  },
+);
 
-export async function toggleGearItemActive(formData: FormData) {
-  await requireAdmin();
-  const id = requiredString(formData, "id", "id");
-  const nextActive = formData.get("next_active") === "true";
-  const supabase = createAdminClient();
+export const updateGearItem = adminFormAction(
+  async ({ supabase }, formData) => {
+    const id = requiredString(formData, "id", "id");
 
-  const { error } = await supabase
-    .from("gear_items")
-    .update({ active: nextActive, updated_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw new Error(`Failed to toggle item: ${error.message}`);
+    const patch: Record<string, unknown> = {};
+    const stringFields: [string, { max?: number } | undefined][] = [
+      ["name", undefined],
+      ["slug", undefined],
+      ["category", undefined],
+      ["short_description", { max: 400 }],
+      ["how_to_use_url", undefined],
+      ["photo_url", undefined],
+      ["follow_up_question", { max: 500 }],
+    ];
+    for (const [f, opts] of stringFields) {
+      if (formData.has(f)) patch[f] = stringField(formData, f, opts);
+    }
+    if (formData.has("quantity_total"))
+      patch.quantity_total = numberField(formData, "quantity_total", { min: 0 }) ?? 1;
+    if (formData.has("suggested_contribution"))
+      patch.suggested_contribution =
+        numberField(formData, "suggested_contribution", { min: 0 }) ?? 0;
+    if (formData.has("unit")) patch.unit = unitField(formData);
+    if (formData.has("sort_order"))
+      patch.sort_order = numberField(formData, "sort_order", { min: 0 }) ?? 0;
+    // Checkboxes: absent = false, "on" = true. Include every time so the form
+    // can uncheck as well as check.
+    patch.active = formData.get("active") === "on";
+    patch.requires_electricity = formData.get("requires_electricity") === "on";
+    patch.updated_at = new Date().toISOString();
 
-  revalidatePath("/admin/gear/catalog");
-}
+    const { error } = await supabase.from("gear_items").update(patch).eq("id", id);
+    if (error) throw new Error(`Failed to update item: ${error.message}`);
+  },
+  {
+    name: "updateGearItem",
+    revalidate: "/admin/gear/catalog",
+    audit: (formData) => ({
+      action: "gear_item.update",
+      entityType: "gear_item",
+      entityId: stringField(formData, "id"),
+    }),
+  },
+);
 
-export async function deleteGearItem(formData: FormData) {
-  await requireAdmin();
-  const id = requiredString(formData, "id", "id");
-  const supabase = createAdminClient();
+export const toggleGearItemActive = adminFormAction(
+  async ({ supabase }, formData) => {
+    const id = requiredString(formData, "id", "id");
+    const nextActive = formData.get("next_active") === "true";
 
-  const { error } = await supabase.from("gear_items").delete().eq("id", id);
-  if (error) throw new Error(`Failed to delete item: ${error.message}`);
+    const { error } = await supabase
+      .from("gear_items")
+      .update({ active: nextActive, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) throw new Error(`Failed to toggle item: ${error.message}`);
+  },
+  {
+    name: "toggleGearItemActive",
+    revalidate: "/admin/gear/catalog",
+    audit: (formData) => ({
+      action: "gear_item.toggle_active",
+      entityType: "gear_item",
+      entityId: stringField(formData, "id"),
+      diff: { next_active: formData.get("next_active") === "true" },
+    }),
+  },
+);
 
-  revalidatePath("/admin/gear/catalog");
-}
+export const deleteGearItem = adminFormAction(
+  async ({ supabase }, formData) => {
+    const id = requiredString(formData, "id", "id");
+    const { error } = await supabase.from("gear_items").delete().eq("id", id);
+    if (error) throw new Error(`Failed to delete item: ${error.message}`);
+  },
+  {
+    name: "deleteGearItem",
+    revalidate: "/admin/gear/catalog",
+    audit: (formData) => ({
+      action: "gear_item.delete",
+      entityType: "gear_item",
+      entityId: stringField(formData, "id"),
+    }),
+  },
+);
 
 export type UploadGearImageResult =
   | { ok: true; url: string }
@@ -153,6 +185,10 @@ export type UploadGearImageResult =
  * action. Returns the public URL on success so the caller can write it
  * into the photo_url text field. Does not persist anything to gear_items
  * on its own — the URL is saved via the normal create/update flow.
+ *
+ * Uses the raw `requireAdmin` guard (not adminFormAction) because it
+ * already returns a typed useFormState-style result and does no
+ * revalidation of its own.
  */
 export async function uploadGearImageAction(
   _prev: UploadGearImageResult | null,
