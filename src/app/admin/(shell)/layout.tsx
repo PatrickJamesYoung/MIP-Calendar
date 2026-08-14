@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { AdminNav } from "@/components/admin/admin-nav";
+import { AdminMobileNav } from "@/components/admin/admin-mobile-nav";
 import { AdminSignOutButton } from "@/components/admin/sign-out-button";
 
 /**
@@ -32,11 +33,13 @@ export default async function AdminShellLayout({
             <AdminNav role={admin.role} />
           </div>
           <div className="flex items-center gap-3 text-xs">
-            <span className="text-mip-gray-500 hidden sm:inline">
+            {/* Email + role badge + sign-out only render on md+; the
+                mobile drawer includes the same info at its footer. */}
+            <span className="text-mip-gray-500 hidden md:inline">
               {admin.email}
             </span>
             <span
-              className="px-2 py-0.5 uppercase font-bold tracking-wider text-[10px]"
+              className="hidden md:inline px-2 py-0.5 uppercase font-bold tracking-wider text-[10px]"
               style={{
                 backgroundColor:
                   admin.role === "super"
@@ -51,7 +54,10 @@ export default async function AdminShellLayout({
             >
               {admin.role}
             </span>
-            <AdminSignOutButton />
+            <span className="hidden md:inline">
+              <AdminSignOutButton />
+            </span>
+            <AdminMobileNav role={admin.role} email={admin.email} />
           </div>
         </div>
       </header>

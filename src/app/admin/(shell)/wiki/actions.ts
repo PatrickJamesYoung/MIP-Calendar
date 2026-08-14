@@ -186,6 +186,32 @@ export async function restoreVersion(formData: FormData): Promise<void> {
   redirect(`/admin/wiki/${slug}`);
 }
 
+// ---------- PIN / UNPIN ----------
+
+/**
+ * Toggle the pinned state of a wiki page.
+ *
+ * Pinning stamps `pinned_at = now()`; unpinning nulls it. The index page
+ * uses `pinned_at desc` as the sort key, so the most recently pinned
+ * page appears first in the pinned section.
+ */
+export async function togglePinPage(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const pin = formData.get("pin") === "1";
+  if (!id) throw new Error("Missing page id");
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("wiki_pages")
+    .update({ pinned_at: pin ? new Date().toISOString() : null })
+    .eq("id", id);
+
+  if (error) throw new Error(`Could not update pin: ${error.message}`);
+
+  revalidatePath("/admin/wiki");
+}
+
 // ---------- DELETE ----------
 
 export async function deletePage(formData: FormData): Promise<void> {

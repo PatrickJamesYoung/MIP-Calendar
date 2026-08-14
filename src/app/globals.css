@@ -344,6 +344,12 @@ textarea.mip-input {
 .wiki-prose h3 { font-size: 1.125rem; }
 .wiki-prose h4 { font-size: 1rem; }
 .wiki-prose p { margin: 0.75em 0; }
+.wiki-prose a {
+  color: #1d4ed8; /* blue-700 — high-contrast on white */
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.wiki-prose a:hover { color: #1e40af; /* blue-800 */ }
 .wiki-prose ul,
 .wiki-prose ol { margin: 0.75em 0; padding-left: 1.5em; }
 .wiki-prose ul { list-style: disc; }
