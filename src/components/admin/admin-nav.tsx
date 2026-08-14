@@ -5,84 +5,15 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { AdminRole } from "@/lib/types";
+import { NAV, type NavGroup } from "./nav-config";
 
 interface Props {
   role: AdminRole;
 }
 
-interface NavLeaf {
-  href: string;
-  label: string;
-  exact?: boolean;
-  superOnly?: boolean;
-}
-
-interface NavGroup {
-  label: string;
-  items: NavLeaf[];
-  /**
-   * Path prefixes that should mark this group as active in the nav.
-   * Kept explicit rather than derived from items so we can flag things
-   * like /admin/events/[id]/edit under Calendar even though the item
-   * href is only /admin/events.
-   */
-  activePrefixes: string[];
-}
-
-type NavEntry =
-  | { kind: "link"; leaf: NavLeaf }
-  | { kind: "group"; group: NavGroup };
-
-const NAV: NavEntry[] = [
-  {
-    kind: "link",
-    leaf: { href: "/admin/wiki", label: "Wiki" },
-  },
-  {
-    kind: "group",
-    group: {
-      label: "Calendar",
-      activePrefixes: [
-        "/admin/events",
-        "/admin/submissions",
-        "/admin/overlays",
-        "/admin/import",
-      ],
-      items: [
-        { href: "/admin/events", label: "Events" },
-        { href: "/admin/submissions", label: "Submissions" },
-        { href: "/admin/overlays", label: "Calendars" },
-        { href: "/admin/import", label: "Import", superOnly: true },
-      ],
-    },
-  },
-  {
-    kind: "group",
-    group: {
-      label: "Gear",
-      activePrefixes: ["/admin/gear"],
-      items: [
-        { href: "/admin/gear", label: "Requests", exact: true },
-        { href: "/admin/gear/catalog", label: "Catalog" },
-        { href: "/admin/gear/templates", label: "Email templates" },
-        { href: "/admin/gear/settings", label: "Settings" },
-      ],
-    },
-  },
-  {
-    kind: "group",
-    group: {
-      label: "Admin",
-      activePrefixes: ["/admin/admins", "/admin/ingestion", "/admin/audit"],
-      items: [
-        { href: "/admin/admins", label: "Admins" },
-        { href: "/admin/ingestion", label: "Ingestion", superOnly: true },
-        { href: "/admin/audit", label: "Audit" },
-      ],
-    },
-  },
-];
-
+/**
+ * Desktop admin nav. Hidden on mobile — see `AdminMobileNav` for that.
+ */
 export function AdminNav({ role }: Props) {
   const pathname = usePathname();
 
@@ -209,7 +140,9 @@ function NavDropdown({
           style={{ borderRadius: "var(--radius-card)" }}
         >
           {group.items.map((item) => {
-            const isActive = pathname.startsWith(item.href);
+            const isActive = item.exact
+              ? pathname === item.href
+              : pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}

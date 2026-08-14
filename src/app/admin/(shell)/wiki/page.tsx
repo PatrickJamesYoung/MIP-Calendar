@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Plus, BookOpen, Clock } from "lucide-react";
+import { Plus, BookOpen, Clock, Pin } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { PinButton } from "./pin-button";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,7 @@ interface WikiPageRow {
   title: string;
   summary: string | null;
   updated_at: string;
+  pinned_at?: string | null;
   /** Only populated when this row came back from wiki_search. */
   snippet?: string;
 }
@@ -28,27 +30,32 @@ export default async function AdminWikiIndexPage({
 
   const supabase = await createClient();
 
-  // Two code paths:
-  //  - No query → plain ordered list from wiki_pages (with exact count).
-  //  - Query   → wiki_search RPC, which returns headline snippets and
-  //              rank-ordered rows. Count is just rows.length — the RPC
-  //              caps at 50, which matches the plain list's PAGE_SIZE, so
-  //              a single number is honest here.
-  let pages: WikiPageRow[];
-  let totalCount: number;
+  // Three code paths:
+  //  - Search query → wiki_search RPC (rank-ordered, pinning ignored so
+  //    relevance wins for that view).
+  //  - No search → fetch all pages and split into pinned + recent in JS.
+  //    This is one round trip that handles both sections; the wiki
+  //    isn't large enough for a second query to be worth it.
+  let pinned: WikiPageRow[] = [];
+  let recent: WikiPageRow[] = [];
+  let searchResults: WikiPageRow[] = [];
+  let totalCount = 0;
 
   if (search) {
     const { data } = await supabase.rpc("wiki_search", { q: search });
-    pages = (data ?? []) as WikiPageRow[];
-    totalCount = pages.length;
+    searchResults = (data ?? []) as WikiPageRow[];
+    totalCount = searchResults.length;
   } else {
     const { data, count } = await supabase
       .from("wiki_pages")
-      .select("id,slug,title,summary,updated_at", { count: "exact" })
+      .select("id,slug,title,summary,updated_at,pinned_at", { count: "exact" })
+      .order("pinned_at", { ascending: false, nullsFirst: false })
       .order("updated_at", { ascending: false })
       .limit(PAGE_SIZE);
-    pages = (data ?? []) as WikiPageRow[];
-    totalCount = count ?? pages.length;
+    const rows = (data ?? []) as WikiPageRow[];
+    pinned = rows.filter((r) => r.pinned_at);
+    recent = rows.filter((r) => !r.pinned_at);
+    totalCount = count ?? rows.length;
   }
 
   return (
@@ -63,8 +70,8 @@ export default async function AdminWikiIndexPage({
             Wiki
           </h1>
           <p className="mt-3 text-sm text-mip-gray-700">
-            Internal knowledge base for MIP admins. Markdown pages with full
-            edit history.
+            Internal knowledge base for MIP admins. Pages with full edit
+            history — pin the ones people should find first.
           </p>
         </div>
         <Link
@@ -109,64 +116,122 @@ export default async function AdminWikiIndexPage({
       </form>
 
       {/* Results */}
-      {pages.length === 0 ? (
-        <EmptyState hasSearch={Boolean(search)} />
+      {search ? (
+        // Search results: single flat list, pinning ignored so ranking wins.
+        searchResults.length === 0 ? (
+          <EmptyState hasSearch />
+        ) : (
+          <>
+            <SectionHeader
+              label={`${totalCount} result${totalCount === 1 ? "" : "s"}`}
+            />
+            <PageList pages={searchResults} />
+          </>
+        )
+      ) : pinned.length === 0 && recent.length === 0 ? (
+        <EmptyState hasSearch={false} />
       ) : (
         <>
-          <div className="text-xs uppercase tracking-wider text-mip-gray-500">
-            {totalCount} page{totalCount === 1 ? "" : "s"}
-          </div>
-          <ul
-            className="border border-mip-gray-200 divide-y divide-mip-gray-100"
-            style={{ borderRadius: "var(--radius-card)" }}
-          >
-            {pages.map((p) => (
-              <li key={p.id}>
-                <Link
-                  href={`/admin/wiki/${p.slug}`}
-                  className="block px-4 py-3 hover:bg-mip-gray-50 transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <BookOpen className="w-4 h-4 text-mip-purple shrink-0" />
-                        <span className="mip-heading text-base truncate">
-                          {p.title}
-                        </span>
-                      </div>
-                      {p.snippet ? (
-                        // The wiki_search RPC strips HTML tags from bodies
-                        // before ts_headline runs, then ts_headline wraps
-                        // matches in <b>...</b>. The only markup the client
-                        // ever receives is those <b> tags, so this is safe
-                        // to render as HTML.
-                        <p
-                          className="mt-1 text-sm text-mip-gray-700 line-clamp-2 [&_b]:font-bold [&_b]:text-mip-purple"
-                          dangerouslySetInnerHTML={{ __html: p.snippet }}
-                        />
-                      ) : (
-                        p.summary && (
-                          <p className="mt-1 text-sm text-mip-gray-700 line-clamp-2">
-                            {p.summary}
-                          </p>
-                        )
-                      )}
-                      <p className="mt-1 text-xs text-mip-gray-500 font-mono">
-                        /{p.slug}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1 text-xs text-mip-gray-500 shrink-0">
-                      <Clock className="w-3 h-3" />
-                      {formatRelative(p.updated_at)}
-                    </div>
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          {pinned.length > 0 && (
+            <div className="space-y-2">
+              <SectionHeader
+                label="Pinned"
+                icon={<Pin className="w-3 h-3" />}
+              />
+              <PageList pages={pinned} />
+            </div>
+          )}
+          {recent.length > 0 && (
+            <div className="space-y-2">
+              <SectionHeader
+                label={
+                  pinned.length > 0
+                    ? "All pages"
+                    : `${totalCount} page${totalCount === 1 ? "" : "s"}`
+                }
+              />
+              <PageList pages={recent} />
+            </div>
+          )}
         </>
       )}
     </div>
+  );
+}
+
+function SectionHeader({
+  label,
+  icon,
+}: {
+  label: string;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-mip-gray-500">
+      {icon}
+      {label}
+    </div>
+  );
+}
+
+function PageList({ pages }: { pages: WikiPageRow[] }) {
+  return (
+    <ul
+      className="border border-mip-gray-200 divide-y divide-mip-gray-100"
+      style={{ borderRadius: "var(--radius-card)" }}
+    >
+      {pages.map((p) => (
+        <li key={p.id} className="relative group">
+          {/* The pin button sits absolutely inside the row so it can post
+              its own form without being nested inside the row link (which
+              would be invalid HTML: <form> inside <a>). The row link
+              takes up the rest of the row via padding-right to leave
+              space for the button. */}
+          <Link
+            href={`/admin/wiki/${p.slug}`}
+            className="block px-4 py-3 pr-14 hover:bg-mip-gray-50 transition-colors"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-mip-purple shrink-0" />
+                  <span className="mip-heading text-base truncate">
+                    {p.title}
+                  </span>
+                </div>
+                {p.snippet ? (
+                  // The wiki_search RPC strips HTML tags from bodies
+                  // before ts_headline runs, then ts_headline wraps
+                  // matches in <b>...</b>. The only markup the client
+                  // ever receives is those <b> tags, so this is safe
+                  // to render as HTML.
+                  <p
+                    className="mt-1 text-sm text-mip-gray-700 line-clamp-2 [&_b]:font-bold [&_b]:text-mip-purple"
+                    dangerouslySetInnerHTML={{ __html: p.snippet }}
+                  />
+                ) : (
+                  p.summary && (
+                    <p className="mt-1 text-sm text-mip-gray-700 line-clamp-2">
+                      {p.summary}
+                    </p>
+                  )
+                )}
+                <p className="mt-1 text-xs text-mip-gray-500 font-mono">
+                  /{p.slug}
+                </p>
+              </div>
+              <div className="flex items-center gap-1 text-xs text-mip-gray-500 shrink-0">
+                <Clock className="w-3 h-3" />
+                {formatRelative(p.updated_at)}
+              </div>
+            </div>
+          </Link>
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <PinButton id={p.id} pinned={Boolean(p.pinned_at)} />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 

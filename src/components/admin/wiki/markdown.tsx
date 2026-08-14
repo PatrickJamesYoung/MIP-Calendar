@@ -23,10 +23,12 @@ export function WikiMarkdown({ source }: { source: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
+          // Only set target/rel here — visual styling comes from
+          // `.wiki-prose a` in globals.css so markdown and HTML
+          // renderers stay in sync.
           a: ({ href, children }) => (
             <a
               href={href}
-              className="text-mip-purple underline underline-offset-4 hover:opacity-80"
               target={href?.startsWith("http") ? "_blank" : undefined}
               rel={href?.startsWith("http") ? "noreferrer" : undefined}
             >
