@@ -5,9 +5,9 @@ import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   renderGearTemplateEmail,
-  sendGearRawEmail,
   type GearEmailTemplateKey,
 } from "@/lib/gear/email";
+import { dispatchGearEmail } from "@/lib/gear/messages";
 
 /**
  * Server actions for the reservation detail page.
@@ -184,13 +184,14 @@ export async function sendPreparedEmail(args: {
     .maybeSingle();
   if (!reservation) return { ok: false, error: "Reservation not found" };
 
-  const result = await sendGearRawEmail({
-    reservation: {
-      requester_email: reservation.requester_email,
-      human_id: reservation.human_id,
-    },
+  const result = await dispatchGearEmail({
+    reservationId: args.reservationId,
+    humanId: reservation.human_id,
+    toAddress: reservation.requester_email,
     subject,
     bodyText: body,
+    templateKey: args.templateKey,
+    actorEmail: admin.email,
   });
 
   await logActivity({
@@ -200,7 +201,7 @@ export async function sendPreparedEmail(args: {
     action: "email_sent",
     detail: {
       template: args.templateKey,
-      email: result,
+      email: { ok: result.ok, error: result.error, transport: result.transport },
       // Signal whether the organizer edited the draft (roughly).
       edited: subject.length + body.length > 0,
     },
@@ -208,7 +209,7 @@ export async function sendPreparedEmail(args: {
 
   revalidatePath(`/admin/gear/${args.humanId}`);
   if (!result.ok) return { ok: false, error: result.error ?? "Send failed" };
-  return { ok: true, subject: result.subject ?? subject };
+  return { ok: true, subject };
 }
 
 // ---------- UPDATE FIELDS (notes, pickup location, contact) ----------
