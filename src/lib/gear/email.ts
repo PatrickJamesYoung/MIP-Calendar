@@ -20,6 +20,7 @@
 
 import { resendSend, escapeHtml } from "@/lib/email/resend-client";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { dispatchGearEmail } from "@/lib/gear/messages";
 
 export type GearEmailTemplateKey =
   | "submission_ack"
@@ -164,11 +165,22 @@ export async function sendGearTemplateEmail(args: {
 }): Promise<SendResult> {
   const rendered = await renderGearTemplateEmail(args);
   if (!rendered.ok) return { ok: false, error: rendered.error };
-  return sendGearRawEmail({
-    reservation: args.reservation,
+  // Route through the dispatcher so the outbound send is captured in
+  // gear_email_messages and gets Gmail delivery when configured.
+  const result = await dispatchGearEmail({
+    reservationId: args.reservation.id,
+    humanId: args.reservation.human_id,
+    toAddress: args.reservation.requester_email,
     subject: rendered.rendered.subject,
     bodyText: rendered.rendered.bodyText,
+    templateKey: args.templateKey,
+    actorEmail: null,
   });
+  return {
+    ok: result.ok,
+    error: result.error,
+    subject: rendered.rendered.subject,
+  };
 }
 
 function buildPlaceholders(

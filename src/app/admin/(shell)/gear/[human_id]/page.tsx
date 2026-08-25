@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ReservationActions } from "./reservation-actions";
 import { ReservationEditor } from "./reservation-editor";
+import { EmailsPanel } from "./emails-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,23 @@ interface Activity {
   actor_email: string | null;
   action: string;
   detail: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface EmailMessage {
+  id: string;
+  direction: "outbound" | "inbound";
+  transport: "gmail" | "resend";
+  subject: string;
+  body_text: string;
+  body_html: string | null;
+  from_address: string;
+  to_address: string;
+  template_key: string | null;
+  actor_email: string | null;
+  sent_at: string | null;
+  received_at: string | null;
+  error: string | null;
   created_at: string;
 }
 
@@ -141,40 +159,49 @@ export default async function GearReservationDetail(props: {
   if (!reservation) return notFound();
   const r = reservation as Reservation;
 
-  const [linesRes, activityRes, catalogRes, settingsRes] = await Promise.all([
-    supabase
-      .from("gear_reservation_lines")
-      .select(
-        "id,name_snapshot,quantity,unit_contribution,line_full,follow_up_answer,gear_items(category)"
-      )
-      .eq("reservation_id", r.id)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("gear_activity")
-      .select("id,actor_email,action,detail,created_at")
-      .eq("reservation_id", r.id)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("gear_items")
-      .select("id,name,category,suggested_contribution,quantity_total")
-      .eq("active", true)
-      .order("name", { ascending: true }),
-    supabase
-      .from("gear_settings")
-      .select("key,value")
-      .in("key", [
-        "tier_full_label",
-        "tier_mid_label",
-        "tier_low_label",
-        "tier_full_multiplier",
-        "tier_mid_multiplier",
-        "tier_low_multiplier",
-      ]),
-  ]);
+  const [linesRes, activityRes, catalogRes, settingsRes, emailsRes] =
+    await Promise.all([
+      supabase
+        .from("gear_reservation_lines")
+        .select(
+          "id,name_snapshot,quantity,unit_contribution,line_full,follow_up_answer,gear_items(category)"
+        )
+        .eq("reservation_id", r.id)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("gear_activity")
+        .select("id,actor_email,action,detail,created_at")
+        .eq("reservation_id", r.id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("gear_items")
+        .select("id,name,category,suggested_contribution,quantity_total")
+        .eq("active", true)
+        .order("name", { ascending: true }),
+      supabase
+        .from("gear_settings")
+        .select("key,value")
+        .in("key", [
+          "tier_full_label",
+          "tier_mid_label",
+          "tier_low_label",
+          "tier_full_multiplier",
+          "tier_mid_multiplier",
+          "tier_low_multiplier",
+        ]),
+      supabase
+        .from("gear_email_messages")
+        .select(
+          "id,direction,transport,subject,body_text,body_html,from_address,to_address,template_key,actor_email,sent_at,received_at,error,created_at"
+        )
+        .eq("reservation_id", r.id)
+        .order("created_at", { ascending: false }),
+    ]);
   const linesData = (linesRes.data ?? []) as Line[];
   const activityData = (activityRes.data ?? []) as Activity[];
   const catalogData = (catalogRes.data ?? []) as CatalogItem[];
   const settingsData = (settingsRes.data ?? []) as SettingRow[];
+  const emailsData = (emailsRes.data ?? []) as EmailMessage[];
 
   const settingMap = new Map(settingsData.map((s) => [s.key, s.value]));
   const tierChoices = [
@@ -329,6 +356,8 @@ export default async function GearReservationDetail(props: {
               </ul>
             )}
           </Panel>
+
+          <EmailsPanel emails={emailsData} />
         </div>
       </div>
     </div>

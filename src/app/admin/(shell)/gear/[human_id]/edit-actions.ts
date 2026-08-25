@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendGearRawEmail } from "@/lib/gear/email";
+import { dispatchGearEmail } from "@/lib/gear/messages";
 
 /**
  * Full-edit server actions for gear reservations.
@@ -197,6 +197,7 @@ async function maybeNotifyOrganizer(args: {
   reservation: ReservationRow;
   changes: FieldDiff[];
   notify: boolean;
+  actorEmail: string | null;
 }): Promise<{ ok: boolean; error?: string } | null> {
   if (!args.notify || args.changes.length === 0) return null;
   const lines = args.changes
@@ -208,14 +209,16 @@ async function maybeNotifyOrganizer(args: {
     `${lines}\n\n` +
     `If this doesn't look right, reply to this email and we'll sort it out.\n\n` +
     `— MIP Gear Library`;
-  return sendGearRawEmail({
-    reservation: {
-      requester_email: args.reservation.requester_email,
-      human_id: args.reservation.human_id,
-    },
+  const result = await dispatchGearEmail({
+    reservationId: args.reservation.id,
+    humanId: args.reservation.human_id,
+    toAddress: args.reservation.requester_email,
     subject: `Update to your MIP gear reservation ${args.reservation.human_id}`,
     bodyText,
+    templateKey: "reservation_edited",
+    actorEmail: args.actorEmail ?? null,
   });
+  return { ok: result.ok, error: result.error };
 }
 
 // ─────────────── 1. Core fields ───────────────
@@ -288,6 +291,7 @@ export async function updateReservationCoreFields(formData: FormData) {
     reservation: before,
     changes: changes.filter((c) => c.field !== "internal_notes"), // never leak notes
     notify,
+    actorEmail: admin.email,
   });
 
   await logEdit({
@@ -368,6 +372,7 @@ export async function updateReservationDates(formData: FormData) {
     reservation: before,
     changes,
     notify,
+    actorEmail: admin.email,
   });
 
   await logEdit({
@@ -483,6 +488,7 @@ export async function updateReservationTier(formData: FormData) {
     reservation: before,
     changes,
     notify,
+    actorEmail: admin.email,
   });
 
   await logEdit({
@@ -571,6 +577,7 @@ export async function updateReservationLine(args: {
     reservation,
     changes,
     notify: Boolean(args.notifyOrganizer),
+    actorEmail: admin.email,
   });
 
   await logEdit({
@@ -632,6 +639,7 @@ export async function deleteReservationLine(args: {
     reservation,
     changes,
     notify: Boolean(args.notifyOrganizer),
+    actorEmail: admin.email,
   });
 
   await logEdit({
@@ -712,6 +720,7 @@ export async function addReservationLine(args: {
     reservation,
     changes,
     notify: Boolean(args.notifyOrganizer),
+    actorEmail: admin.email,
   });
 
   await logEdit({
