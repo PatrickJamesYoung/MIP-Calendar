@@ -2,8 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { updateReservationFields } from "./actions";
 import { ReservationActions } from "./reservation-actions";
+import { ReservationEditor } from "./reservation-editor";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +47,19 @@ interface Line {
   gear_items: { category: string | null }[] | { category: string | null } | null;
 }
 
+interface CatalogItem {
+  id: string;
+  name: string;
+  category: string | null;
+  suggested_contribution: number;
+  quantity_total: number;
+}
+
+interface SettingRow {
+  key: string;
+  value: unknown;
+}
+
 interface Activity {
   id: string;
   actor_email: string | null;
@@ -77,12 +90,30 @@ function lineCategory(l: Line): string | null {
 
 function statusBadge(status: Status) {
   const map: Record<Status, { label: string; className: string }> = {
-    tentative: { label: "Tentative", className: "bg-amber-100 text-amber-900 border-amber-300" },
-    approved: { label: "Approved", className: "bg-emerald-100 text-emerald-900 border-emerald-300" },
-    denied: { label: "Denied", className: "bg-rose-100 text-rose-900 border-rose-300" },
-    picked_up: { label: "Picked up", className: "bg-sky-100 text-sky-900 border-sky-300" },
-    returned: { label: "Returned", className: "bg-slate-100 text-slate-900 border-slate-300" },
-    cancelled: { label: "Cancelled", className: "bg-neutral-100 text-neutral-700 border-neutral-300" },
+    tentative: {
+      label: "Tentative",
+      className: "bg-amber-100 text-amber-900 border-amber-300",
+    },
+    approved: {
+      label: "Approved",
+      className: "bg-emerald-100 text-emerald-900 border-emerald-300",
+    },
+    denied: {
+      label: "Denied",
+      className: "bg-rose-100 text-rose-900 border-rose-300",
+    },
+    picked_up: {
+      label: "Picked up",
+      className: "bg-sky-100 text-sky-900 border-sky-300",
+    },
+    returned: {
+      label: "Returned",
+      className: "bg-slate-100 text-slate-900 border-slate-300",
+    },
+    cancelled: {
+      label: "Cancelled",
+      className: "bg-neutral-100 text-neutral-700 border-neutral-300",
+    },
   };
   const s = map[status] ?? map.tentative;
   return (
@@ -110,23 +141,77 @@ export default async function GearReservationDetail(props: {
   if (!reservation) return notFound();
   const r = reservation as Reservation;
 
-  const [linesRes, activityRes] = await Promise.all([
+  const [linesRes, activityRes, catalogRes, settingsRes] = await Promise.all([
     supabase
       .from("gear_reservation_lines")
       .select(
         "id,name_snapshot,quantity,unit_contribution,line_full,follow_up_answer,gear_items(category)"
       )
-      .eq("reservation_id", r.id),
+      .eq("reservation_id", r.id)
+      .order("created_at", { ascending: true }),
     supabase
       .from("gear_activity")
       .select("id,actor_email,action,detail,created_at")
       .eq("reservation_id", r.id)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("gear_items")
+      .select("id,name,category,suggested_contribution,quantity_total")
+      .eq("active", true)
+      .order("name", { ascending: true }),
+    supabase
+      .from("gear_settings")
+      .select("key,value")
+      .in("key", [
+        "tier_full_label",
+        "tier_mid_label",
+        "tier_low_label",
+        "tier_full_multiplier",
+        "tier_mid_multiplier",
+        "tier_low_multiplier",
+      ]),
   ]);
   const linesData = (linesRes.data ?? []) as Line[];
   const activityData = (activityRes.data ?? []) as Activity[];
+  const catalogData = (catalogRes.data ?? []) as CatalogItem[];
+  const settingsData = (settingsRes.data ?? []) as SettingRow[];
 
-  const totalItems = linesData.reduce((n, l) => n + l.quantity, 0);
+  const settingMap = new Map(settingsData.map((s) => [s.key, s.value]));
+  const tierChoices = [
+    {
+      key: "full",
+      label:
+        (settingMap.get("tier_full_label") as string) ??
+        "Well-resourced organization",
+      multiplier: Number(settingMap.get("tier_full_multiplier") ?? 1),
+    },
+    {
+      key: "mid",
+      label:
+        (settingMap.get("tier_mid_label") as string) ??
+        "Small organization or coalition",
+      multiplier: Number(settingMap.get("tier_mid_multiplier") ?? 0.85),
+    },
+    {
+      key: "low",
+      label:
+        (settingMap.get("tier_low_label") as string) ??
+        "Volunteer group or individual",
+      multiplier: Number(settingMap.get("tier_low_multiplier") ?? 0.65),
+    },
+  ];
+
+  // Flatten line category so the editor doesn't need to know how Supabase
+  // renders a foreign-key relation.
+  const editorLines = linesData.map((l) => ({
+    id: l.id,
+    name_snapshot: l.name_snapshot,
+    category: lineCategory(l),
+    quantity: l.quantity,
+    unit_contribution: Number(l.unit_contribution ?? 0),
+    line_full: Number(l.line_full ?? 0),
+    follow_up_answer: l.follow_up_answer,
+  }));
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
@@ -164,75 +249,34 @@ export default async function GearReservationDetail(props: {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* LEFT: line items + event details */}
+        {/* LEFT: editable reservation */}
         <div className="space-y-6 lg:col-span-2">
-          <Panel title="Requested items">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs uppercase tracking-wide text-neutral-500">
-                  <th className="pb-2 pr-4 font-medium">Item</th>
-                  <th className="pb-2 pr-4 font-medium">Category</th>
-                  <th className="pb-2 pr-4 text-right font-medium">Qty</th>
-                  <th className="pb-2 pr-4 text-right font-medium">Unit</th>
-                  <th className="pb-2 text-right font-medium">Line total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {linesData.map((l) => (
-                  <tr key={l.id} className="border-b border-neutral-100">
-                    <td className="py-2 pr-4">
-                      <div>{l.name_snapshot}</div>
-                      {l.follow_up_answer && (
-                        <div className="mt-1 text-xs text-neutral-600">
-                          <span className="text-neutral-500">Note: </span>
-                          {l.follow_up_answer}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-2 pr-4 text-neutral-600">
-                      {lineCategory(l) ?? "—"}
-                    </td>
-                    <td className="py-2 pr-4 text-right tabular-nums">
-                      {l.quantity}
-                    </td>
-                    <td className="py-2 pr-4 text-right tabular-nums">
-                      ${Number(l.unit_contribution ?? 0).toFixed(2)}
-                    </td>
-                    <td className="py-2 text-right tabular-nums">
-                      ${Number(l.line_full ?? 0).toFixed(2)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={2} className="pt-3 text-neutral-500">
-                    {totalItems} item{totalItems === 1 ? "" : "s"}
-                  </td>
-                  <td></td>
-                  <td className="pt-3 text-right text-neutral-500">Subtotal</td>
-                  <td className="pt-3 text-right tabular-nums">
-                    ${Number(r.subtotal_full ?? 0).toFixed(2)}
-                  </td>
-                </tr>
-                <tr>
-                  <td colSpan={4} className="pt-1 text-right text-neutral-500">
-                    Contribution ({r.contribution_multiplier ?? 1}×)
-                  </td>
-                  <td className="pt-1 text-right font-medium tabular-nums">
-                    ${Number(r.contribution_total ?? 0).toFixed(2)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </Panel>
-
-          <EventPanel r={r} />
-
-          <NotesPanel r={r} />
+          <ReservationEditor
+            reservation={{
+              id: r.id,
+              human_id: r.human_id,
+              requester_name: r.requester_name,
+              requester_email: r.requester_email,
+              requester_phone: r.requester_phone,
+              organization: r.organization,
+              org_tier: r.org_tier,
+              event_description: r.event_description,
+              pickup_at: r.pickup_at,
+              return_at: r.return_at,
+              pickup_location: r.pickup_location,
+              subtotal_full: Number(r.subtotal_full ?? 0),
+              contribution_multiplier: Number(r.contribution_multiplier ?? 1),
+              contribution_total: Number(r.contribution_total ?? 0),
+              coupon_code: r.coupon_code,
+              internal_notes: r.internal_notes,
+            }}
+            lines={editorLines}
+            catalog={catalogData}
+            tierChoices={tierChoices}
+          />
         </div>
 
-        {/* RIGHT: organizer + activity */}
+        {/* RIGHT: read-only organizer summary + activity */}
         <div className="space-y-6">
           <Panel title="Organizer">
             <dl className="space-y-2 text-sm">
@@ -336,6 +380,7 @@ function actionLabel(action: string): string {
     email_sent: "Email sent",
     email_resent: "Email resent",
     fields_updated: "Fields updated",
+    reservation_edited: "Reservation edited",
   };
   return map[action] ?? action;
 }
@@ -346,143 +391,43 @@ function ActivityDetail({ detail }: { detail: Record<string, unknown> }) {
   const reason = detail.reason as string | undefined;
   const fields = detail.fields as string[] | undefined;
   const status = detail.status as string | undefined;
-
-  const parts: string[] = [];
-  if (status) parts.push(`→ ${status}`);
-  if (template) parts.push(`template: ${template}`);
-  if (email) {
-    parts.push(
-      email.ok ? "email sent ✓" : `email failed: ${email.error ?? "unknown"}`
-    );
-  }
-  if (reason) parts.push(`reason: ${reason}`);
-  if (fields) parts.push(`fields: ${fields.join(", ")}`);
-  if (parts.length === 0) return null;
+  const notified = detail.notified as boolean | undefined;
+  const changes = detail.changes as
+    | Array<{
+        field: string;
+        label: string;
+        before: string | null;
+        after: string | null;
+      }>
+    | undefined;
 
   return (
-    <div className="mt-1 text-xs text-neutral-600">{parts.join(" · ")}</div>
-  );
-}
-
-// ─────────────── Editable panels ───────────────
-
-function EventPanel({ r }: { r: Reservation }) {
-  return (
-    <Panel title="Event & logistics">
-      <form
-        action={updateReservationFields}
-        className="grid gap-4 sm:grid-cols-2"
-      >
-        <input type="hidden" name="reservation_id" value={r.id} />
-        <input type="hidden" name="human_id" value={r.human_id} />
-
-        <div className="sm:col-span-2">
-          <div className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-500">
-            Event description
-          </div>
-          <div className="whitespace-pre-wrap rounded-md bg-neutral-50 px-3 py-2 text-sm">
-            {r.event_description || <span className="text-neutral-400">—</span>}
-          </div>
+    <div className="mt-1 space-y-1 text-xs text-neutral-600">
+      {status && <div>→ {status}</div>}
+      {template && <div>template: {template}</div>}
+      {email && (
+        <div>
+          {email.ok
+            ? notified
+              ? "organizer notified ✓"
+              : "email sent ✓"
+            : `email failed: ${email.error ?? "unknown"}`}
         </div>
-
-        <ReadOnly label="Pickup" value={formatDate(r.pickup_at)} />
-        <ReadOnly label="Return" value={formatDate(r.return_at)} />
-
-        <Field
-          label="Organizer name"
-          name="requester_name"
-          defaultValue={r.requester_name ?? ""}
-          placeholder="e.g. Liz Hohenberger"
-        />
-        <Field
-          label="Organizer phone"
-          name="requester_phone"
-          defaultValue={r.requester_phone ?? ""}
-          placeholder="e.g. 555-123-4567"
-        />
-
-        <div className="sm:col-span-2">
-          <Field
-            label="Pickup location"
-            name="pickup_location"
-            defaultValue={r.pickup_location ?? ""}
-            placeholder="e.g. Petworth UMC basement"
-          />
-        </div>
-
-        <div className="sm:col-span-2 flex justify-end">
-          <button
-            type="submit"
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
-          >
-            Save event details
-          </button>
-        </div>
-      </form>
-    </Panel>
-  );
-}
-
-function NotesPanel({ r }: { r: Reservation }) {
-  return (
-    <Panel title="Internal notes (organizer-only)">
-      <form action={updateReservationFields}>
-        <input type="hidden" name="reservation_id" value={r.id} />
-        <input type="hidden" name="human_id" value={r.human_id} />
-        <textarea
-          name="internal_notes"
-          rows={4}
-          defaultValue={r.internal_notes ?? ""}
-          placeholder="Not sent to requester. Organizer-only context."
-          className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-        />
-        <div className="mt-2 flex justify-end">
-          <button
-            type="submit"
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
-          >
-            Save notes
-          </button>
-        </div>
-      </form>
-    </Panel>
-  );
-}
-
-function Field({
-  label,
-  name,
-  defaultValue,
-  placeholder,
-}: {
-  label: string;
-  name: string;
-  defaultValue: string;
-  placeholder?: string;
-}) {
-  return (
-    <label className="block text-sm">
-      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-500">
-        {label}
-      </div>
-      <input
-        type="text"
-        name={name}
-        defaultValue={defaultValue}
-        placeholder={placeholder}
-        className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-      />
-    </label>
-  );
-}
-
-function ReadOnly({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="block text-sm">
-      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-500">
-        {label}
-      </div>
-      <div className="rounded-md bg-neutral-50 px-3 py-2 text-sm">{value}</div>
+      )}
+      {reason && <div>reason: {reason}</div>}
+      {fields && <div>fields: {fields.join(", ")}</div>}
+      {changes && changes.length > 0 && (
+        <ul className="mt-1 space-y-0.5">
+          {changes.map((c, i) => (
+            <li key={i}>
+              <span className="font-medium text-neutral-800">{c.label}:</span>{" "}
+              <span className="text-neutral-500">{c.before ?? "—"}</span>{" "}
+              <span className="text-neutral-400">→</span>{" "}
+              <span className="text-neutral-800">{c.after ?? "—"}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
