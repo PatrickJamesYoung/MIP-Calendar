@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/gear/poll-replies",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}
