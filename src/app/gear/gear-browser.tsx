@@ -36,6 +36,30 @@ interface Props {
 const ALL_CATEGORIES = "__all__";
 const UNCATEGORIZED = "Other";
 
+// Canonical category order on the storefront. Categories not listed here
+// fall to the end of the list in alpha order (with `UNCATEGORIZED` last).
+// Match strings must equal the `category` values in gear_items exactly.
+const CATEGORY_ORDER: readonly string[] = [
+  "Sound Equipment",
+  "Stage and Production",
+  "Event and Logistics",
+];
+
+function compareCategories(a: string, b: string): number {
+  const ai = CATEGORY_ORDER.indexOf(a);
+  const bi = CATEGORY_ORDER.indexOf(b);
+  // Uncategorized items always sort last.
+  if (a === UNCATEGORIZED && b !== UNCATEGORIZED) return 1;
+  if (b === UNCATEGORIZED && a !== UNCATEGORIZED) return -1;
+  // Both in the ordered list: use the list index.
+  if (ai !== -1 && bi !== -1) return ai - bi;
+  // One in the list, the other isn't: the listed one wins.
+  if (ai !== -1) return -1;
+  if (bi !== -1) return 1;
+  // Neither listed: fall back to alpha.
+  return a.localeCompare(b);
+}
+
 export function GearBrowser({ items, tierLabels, tierMultipliers }: Props) {
   const searchParams = useSearchParams();
 
@@ -59,7 +83,7 @@ export function GearBrowser({ items, tierLabels, tierMultipliers }: Props) {
   const categories = useMemo(() => {
     const seen = new Set<string>();
     for (const it of items) seen.add(it.category ?? UNCATEGORIZED);
-    return Array.from(seen).sort();
+    return Array.from(seen).sort(compareCategories);
   }, [items]);
 
   const filtered = useMemo(() => {
@@ -84,7 +108,7 @@ export function GearBrowser({ items, tierLabels, tierMultipliers }: Props) {
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(it);
     }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+    return Array.from(map.entries()).sort(([a], [b]) => compareCategories(a, b));
   }, [filtered]);
 
   const cartCount = Object.values(cart).reduce(

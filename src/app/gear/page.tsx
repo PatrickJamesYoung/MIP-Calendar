@@ -79,6 +79,30 @@ export default async function GearIndexPage() {
         className="mx-auto w-full px-6 py-8 flex-1"
         style={{ maxWidth: "1200px" }}
       >
+        <section className="mb-8 max-w-3xl space-y-4 text-mip-gray-700">
+          <p>
+            Need gear for your action or event? We&rsquo;ve got you covered.
+            We have sound equipment, staging, projectors, podiums, megaphones,
+            tables, chairs, tents, marshal vests, and just about anything else
+            you could need to support an action.
+          </p>
+          <p>
+            Our gear library is a DIY operation. You pick up the gear you
+            need, operate it at your action or event, and return it yourself.
+            If you&rsquo;re looking to book a team to provide on-the-ground
+            support with sound, production, live-streaming or other
+            logistics, contact our partners at{" "}
+            <a
+              href="https://www.reaxn.io/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-mip-purple underline decoration-mip-purple/40 underline-offset-2 hover:decoration-mip-purple"
+            >
+              Re:Action
+            </a>{" "}
+            for a quote!
+          </p>
+        </section>
         <Suspense fallback={null}>
           <GearBrowser
             items={items}
