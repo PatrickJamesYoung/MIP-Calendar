@@ -107,9 +107,21 @@ export function ReservationEditor({
 }: Props) {
   const router = useRouter();
   const [notify, setNotify] = useState(false);
-  const [openSection, setOpenSection] = useState<
-    "core" | "dates" | "tier" | "lines" | null
-  >(null);
+  // All four sections start expanded so the admin sees every piece of
+  // the reservation at a glance. The Section header still toggles a
+  // single section closed when the admin wants to focus on one thing.
+  type SectionKey = "core" | "dates" | "tier" | "lines";
+  const [openSections, setOpenSections] = useState<Set<SectionKey>>(
+    () => new Set<SectionKey>(["lines", "dates", "tier", "core"])
+  );
+  function toggleSection(key: SectionKey) {
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -140,39 +152,31 @@ export function ReservationEditor({
         lines={lines}
         catalog={catalog}
         notify={notify}
-        open={openSection === "lines"}
-        onToggle={() =>
-          setOpenSection(openSection === "lines" ? null : "lines")
-        }
+        open={openSections.has("lines")}
+        onToggle={() => toggleSection("lines")}
         onChange={() => router.refresh()}
       />
 
       <DatesSection
         reservation={reservation}
         notify={notify}
-        open={openSection === "dates"}
-        onToggle={() =>
-          setOpenSection(openSection === "dates" ? null : "dates")
-        }
+        open={openSections.has("dates")}
+        onToggle={() => toggleSection("dates")}
       />
 
       <TierSection
         reservation={reservation}
         tierChoices={tierChoices}
         notify={notify}
-        open={openSection === "tier"}
-        onToggle={() =>
-          setOpenSection(openSection === "tier" ? null : "tier")
-        }
+        open={openSections.has("tier")}
+        onToggle={() => toggleSection("tier")}
       />
 
       <CoreFieldsSection
         reservation={reservation}
         notify={notify}
-        open={openSection === "core"}
-        onToggle={() =>
-          setOpenSection(openSection === "core" ? null : "core")
-        }
+        open={openSections.has("core")}
+        onToggle={() => toggleSection("core")}
       />
     </div>
   );
@@ -209,7 +213,7 @@ function Section({
           )}
         </div>
         <span className="text-xs text-neutral-500">
-          {open ? "Cancel" : "Edit"}
+          {open ? "Hide" : "Show"}
         </span>
       </button>
       {open && <div className="border-t px-5 py-4">{children}</div>}
