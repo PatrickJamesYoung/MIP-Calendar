@@ -1,0 +1,74 @@
+name: Poll Gmail for gear-library replies
+
+# Hits the app's /api/gear/poll-replies endpoint on a 15-minute cadence
+# to fold requester replies into the reservation Emails panel.
+#
+# We use GitHub Actions instead of Vercel Cron because Hobby-tier
+# Vercel caps crons at once per day, and 24-hour reply latency isn't
+# a great experience. GitHub Actions cron is best-effort and can drift
+# a few minutes under load, which is fine for a low-stakes reply poll.
+#
+# Auth: the endpoint gates on Authorization: Bearer $CRON_SECRET. That
+# same secret lives in Vercel env vars for the app to check against.
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub Actions cron runs in UTC and is
+    # best-effort — occasional drift is expected and acceptable.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+# Prevent overlapping runs if a previous poll is still going. This
+# also cleanly cancels a queued run when a manual dispatch fires.
+concurrency:
+  group: gear-poll-replies
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Call /api/gear/poll-replies
+        env:
+          # e.g. https://app.movementinfrastructureproject.org
+          SITE_URL: ${{ secrets.INGEST_API_BASE }}
+          CRON_SECRET: ${{ secrets.GEAR_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SITE_URL:-}" ]; then
+            echo "SITE_URL (INGEST_API_BASE secret) is not set" >&2
+            exit 1
+          fi
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "GEAR_CRON_SECRET is not set" >&2
+            exit 1
+          fi
+
+          # -sS: no progress bar but keep errors on stderr
+          # -w:  print HTTP status on its own line after the body
+          # --max-time: don't hang forever on a bad Vercel deploy
+          # We deliberately do NOT set --fail so we can print the body
+          # even on 4xx/5xx.
+          response=$(curl -sS \
+            --max-time 90 \
+            -w '\n%{http_code}\n' \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Accept: application/json" \
+            "${SITE_URL%/}/api/gear/poll-replies")
+
+          # Last non-empty line is the status code
+          status=$(echo "$response" | awk 'NF' | tail -n1)
+          body=$(echo "$response" | awk 'NF' | sed '$d')
+
+          echo "HTTP $status"
+          echo "$body"
+
+          if [ "$status" != "200" ]; then
+            echo "poll-replies returned non-200; failing the job" >&2
+            exit 1
+          fi
