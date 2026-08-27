@@ -21,6 +21,17 @@ interface Space {
 interface Props {
   spaces: Space[];
   donationMinHours: number;
+  /**
+   * When true, the Continue link opens in the top-level window (breaks out
+   * of the iframe) and points at an absolute reserve URL derived from
+   * `reserveBaseUrl`. Used by /embed/spaces.
+   */
+  embed?: boolean;
+  /**
+   * Absolute origin of the reserve page when embedded — e.g.
+   * https://app.movementinfrastructureproject.org . Ignored when !embed.
+   */
+  reserveBaseUrl?: string;
 }
 
 const ALL_CATEGORIES = "__all__";
@@ -41,7 +52,12 @@ function hydrateSelectionFromParams(
   return slugs;
 }
 
-export function SpacesBrowser({ spaces, donationMinHours }: Props) {
+export function SpacesBrowser({
+  spaces,
+  donationMinHours,
+  embed = false,
+  reserveBaseUrl = "",
+}: Props) {
   const searchParams = useSearchParams();
 
   const [selected, setSelected] = useState<Set<string>>(() =>
@@ -93,10 +109,13 @@ export function SpacesBrowser({ spaces, donationMinHours }: Props) {
     0
   );
 
+  const reserveQuery = selected.size
+    ? `?spaces=${encodeURIComponent(Array.from(selected).sort().join(","))}`
+    : "";
   const reserveHref = selected.size
-    ? `/spaces/reserve?spaces=${encodeURIComponent(
-        Array.from(selected).sort().join(",")
-      )}`
+    ? embed
+      ? `${reserveBaseUrl}/spaces/reserve${reserveQuery}`
+      : `/spaces/reserve${reserveQuery}`
     : "";
 
   return (
@@ -257,12 +276,23 @@ export function SpacesBrowser({ spaces, donationMinHours }: Props) {
             >
               <X className="h-4 w-4" />
             </button>
-            <Link
-              href={reserveHref}
-              className="px-4 py-2 rounded-full text-sm font-medium text-white bg-mip-purple hover:bg-mip-purple/90"
-            >
-              Continue →
-            </Link>
+            {embed ? (
+              <a
+                href={reserveHref}
+                target="_top"
+                rel="noopener"
+                className="px-4 py-2 rounded-full text-sm font-medium text-white bg-mip-purple hover:bg-mip-purple/90"
+              >
+                Continue →
+              </a>
+            ) : (
+              <Link
+                href={reserveHref}
+                className="px-4 py-2 rounded-full text-sm font-medium text-white bg-mip-purple hover:bg-mip-purple/90"
+              >
+                Continue →
+              </Link>
+            )}
           </div>
         </div>
       )}
