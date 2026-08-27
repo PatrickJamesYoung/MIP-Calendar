@@ -33,6 +33,10 @@
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GMAIL_SEND_URL =
   "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
+const GMAIL_LIST_URL =
+  "https://gmail.googleapis.com/gmail/v1/users/me/messages";
+const GMAIL_GET_URL_PREFIX =
+  "https://gmail.googleapis.com/gmail/v1/users/me/messages/";
 
 interface CachedToken {
   accessToken: string;
@@ -244,4 +248,177 @@ function base64UrlEncode(s: string): string {
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
+}
+
+function base64UrlDecode(s: string): string {
+  const pad = "=".repeat((4 - (s.length % 4)) % 4);
+  const b64 = (s + pad).replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(b64, "base64").toString("utf-8");
+}
+
+// ─────────────── Read side (PR C: reply polling) ───────────────
+
+/**
+ * A single Gmail message shape narrowed to the fields we care about
+ * for reply polling. Payload is a recursive MIME tree.
+ */
+export interface GmailMessagePayloadPart {
+  partId?: string;
+  mimeType?: string;
+  filename?: string;
+  headers?: Array<{ name: string; value: string }>;
+  body?: {
+    size?: number;
+    data?: string;
+    attachmentId?: string;
+  };
+  parts?: GmailMessagePayloadPart[];
+}
+
+export interface GmailMessage {
+  id: string;
+  threadId: string;
+  labelIds?: string[];
+  snippet?: string;
+  historyId?: string;
+  internalDate?: string; // ms since epoch, as string
+  payload?: GmailMessagePayloadPart;
+}
+
+/**
+ * List message ids matching a Gmail search query.
+ *
+ * We use search rather than history-delta polling because it's stateless
+ * and easy to reason about — a 15-minute cron with a `newer_than:2d`
+ * overlap covers any missed run without extra bookkeeping.
+ */
+export async function gmailListMessages(args: {
+  q: string;
+  maxResults?: number;
+}): Promise<
+  | { ok: true; messageIds: string[] }
+  | { ok: false; error: string }
+> {
+  if (!isGmailConfigured())
+    return { ok: false, error: "gmail-not-configured" };
+
+  let accessToken: string;
+  try {
+    accessToken = await getAccessToken();
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "gmail-oauth-refresh-failed",
+    };
+  }
+
+  const params = new URLSearchParams({
+    q: args.q,
+    maxResults: String(args.maxResults ?? 50),
+  });
+  const res = await fetch(`${GMAIL_LIST_URL}?${params}`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return {
+      ok: false,
+      error: `gmail-list-failed: ${res.status} ${text.slice(0, 300)}`,
+    };
+  }
+  const json = (await res.json()) as {
+    messages?: Array<{ id: string; threadId: string }>;
+  };
+  return { ok: true, messageIds: (json.messages ?? []).map((m) => m.id) };
+}
+
+/**
+ * Fetch a single message with its full MIME payload.
+ */
+export async function gmailGetMessage(
+  id: string
+): Promise<{ ok: true; message: GmailMessage } | { ok: false; error: string }> {
+  if (!isGmailConfigured())
+    return { ok: false, error: "gmail-not-configured" };
+
+  let accessToken: string;
+  try {
+    accessToken = await getAccessToken();
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "gmail-oauth-refresh-failed",
+    };
+  }
+
+  const url = `${GMAIL_GET_URL_PREFIX}${encodeURIComponent(id)}?format=full`;
+  const res = await fetch(url, {
+    headers: { authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return {
+      ok: false,
+      error: `gmail-get-failed: ${res.status} ${text.slice(0, 300)}`,
+    };
+  }
+  const json = (await res.json()) as GmailMessage;
+  return { ok: true, message: json };
+}
+
+/**
+ * Extract a header value case-insensitively from a Gmail message part.
+ * Returns the empty string if not present.
+ */
+export function gmailHeader(
+  part: GmailMessagePayloadPart | undefined,
+  name: string
+): string {
+  if (!part?.headers) return "";
+  const lower = name.toLowerCase();
+  for (const h of part.headers) {
+    if (h.name.toLowerCase() === lower) return h.value ?? "";
+  }
+  return "";
+}
+
+/**
+ * Walk the MIME tree and return the first `text/plain` and `text/html`
+ * bodies it finds. Gmail decodes to base64url — we un-encode to UTF-8.
+ *
+ * Handles the common cases:
+ *   - single part text/plain
+ *   - multipart/alternative { text/plain, text/html }
+ *   - multipart/mixed { multipart/alternative, attachments }
+ *   - multipart/related { html, inline images }
+ *
+ * We stop at the first body we find of each type — replies quoted
+ * inline are part of that same body, which is what we want to show.
+ */
+export function extractBodies(
+  payload: GmailMessagePayloadPart | undefined
+): { text: string; html: string } {
+  let text = "";
+  let html = "";
+
+  function visit(part: GmailMessagePayloadPart) {
+    const mime = (part.mimeType ?? "").toLowerCase();
+    const data = part.body?.data;
+    if (data && !text && mime === "text/plain") {
+      text = base64UrlDecode(data);
+    } else if (data && !html && mime === "text/html") {
+      html = base64UrlDecode(data);
+    }
+    if (part.parts) {
+      for (const child of part.parts) {
+        visit(child);
+        if (text && html) return;
+      }
+    }
+  }
+
+  if (payload) visit(payload);
+  return { text, html };
 }
