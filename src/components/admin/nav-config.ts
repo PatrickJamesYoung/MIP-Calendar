@@ -67,6 +67,19 @@ export const NAV: NavEntry[] = [
   {
     kind: "group",
     group: {
+      label: "Spaces",
+      activePrefixes: ["/admin/spaces"],
+      items: [
+        { href: "/admin/spaces", label: "Requests", exact: true },
+        { href: "/admin/spaces/catalog", label: "Catalog" },
+        { href: "/admin/spaces/templates", label: "Email templates" },
+        { href: "/admin/spaces/settings", label: "Settings" },
+      ],
+    },
+  },
+  {
+    kind: "group",
+    group: {
       label: "Admin",
       activePrefixes: ["/admin/admins", "/admin/ingestion", "/admin/audit"],
       items: [
