@@ -8,6 +8,10 @@ import {
   type SpaceEmailTemplateKey,
 } from "@/lib/spaces/email";
 import { dispatchSpaceEmail } from "@/lib/spaces/messages";
+import {
+  pushReservationToGcal,
+  unpushReservationFromGcal,
+} from "@/lib/gcal/sync";
 
 /**
  * Server actions for the space-reservation detail page.
@@ -122,6 +126,40 @@ export async function updateReservationStatus(args: {
     detail: { status: args.status },
   });
 
+  // Google Calendar side-effects. We treat 'approved' as the
+  // confirmation state — that's when we push an event to the shared
+  // calendar. Any move OUT of approved (denied/cancelled/completed)
+  // deletes the event so the calendar stays in sync. All gcal errors
+  // are non-fatal: they log as activity but the status change still
+  // sticks so a Google outage can't wedge the admin queue.
+  if (args.status === "approved") {
+    const pushResult = await pushReservationToGcal(args.reservationId);
+    await logActivity({
+      supabase,
+      reservationId: args.reservationId,
+      actorEmail: admin.email,
+      action: pushResult.ok ? "gcal_pushed" : "gcal_push_failed",
+      detail: pushResult as unknown as Record<string, unknown>,
+    });
+  } else if (
+    args.status === "denied" ||
+    args.status === "cancelled" ||
+    args.status === "completed"
+  ) {
+    const unpushResult = await unpushReservationFromGcal(args.reservationId);
+    if (!unpushResult.ok || !unpushResult.skipped) {
+      await logActivity({
+        supabase,
+        reservationId: args.reservationId,
+        actorEmail: admin.email,
+        action: unpushResult.ok
+          ? "gcal_event_removed"
+          : "gcal_remove_failed",
+        detail: unpushResult as unknown as Record<string, unknown>,
+      });
+    }
+  }
+
   revalidatePath(`/admin/spaces/${args.humanId}`);
   revalidatePath("/admin/spaces");
   return { ok: true };
@@ -229,6 +267,7 @@ export async function updateReservationFields(formData: FormData) {
     "requester_email",
     "requester_phone",
     "organization",
+    "event_title",
     "event_description",
     "internal_notes",
     "staffing_organizer",

@@ -10,6 +10,7 @@
 export type SpaceSettingType =
   | "string"
   | "number"
+  | "boolean"
   | "html"
   /**
    * A list of strings, edited as one item per line in a textarea. Coerced
@@ -101,5 +102,23 @@ export const KNOWN_SPACE_SETTINGS: SpaceSettingSpec[] = [
     label: "Art & production room equipment",
     type: "string_list",
     help: "One equipment option per line. These appear as checkboxes when the art & production room is in a request.",
+  },
+  {
+    key: "gcal_calendar_id",
+    label: "Google Calendar — target calendar ID",
+    type: "string",
+    help: "Calendar we push confirmed reservations to and pull inbound events from. Leave blank to disable both sides. Requires GOOGLE_CALENDAR_REFRESH_TOKEN in Vercel.",
+  },
+  {
+    key: "gcal_push_enabled",
+    label: "Google Calendar — push on approval",
+    type: "boolean",
+    help: "When on, moving a reservation to Approved creates an event on the calendar above.",
+  },
+  {
+    key: "gcal_pull_enabled",
+    label: "Google Calendar — pull inbound events",
+    type: "boolean",
+    help: "When on, the daily sync creates approved reservations for calendar events that didn't originate here.",
   },
 ];

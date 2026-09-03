@@ -25,7 +25,11 @@ interface Reservation {
   requester_phone: string | null;
   organization: string | null;
   org_tier: string | null;
+  event_title: string | null;
   event_description: string | null;
+  origin: string | null;
+  gcal_event_id: string | null;
+  gcal_html_link: string | null;
   load_in_at: string;
   event_start_at: string;
   event_end_at: string;
@@ -215,6 +219,7 @@ export default async function SpaceReservationDetail(props: {
               requester_email: r.requester_email,
               requester_phone: r.requester_phone,
               organization: r.organization,
+              event_title: r.event_title,
               event_description: r.event_description,
               load_in_at: r.load_in_at,
               event_start_at: r.event_start_at,
