@@ -359,6 +359,15 @@ export function ReserveSpacesForm({
             />
           </div>
           <div className="mt-4">
+            <TextField
+              label="Event title"
+              name="event_title"
+              required
+              maxLength={200}
+              placeholder="e.g. Coalition planning meeting"
+            />
+          </div>
+          <div className="mt-4">
             <label className="block text-sm text-mip-gray-700 mb-1">
               What is this space for? <span className="text-mip-purple">*</span>
             </label>
@@ -533,12 +542,16 @@ function TextField({
   required,
   type = "text",
   autoComplete,
+  maxLength,
+  placeholder,
 }: {
   label: string;
   name: string;
   required?: boolean;
   type?: string;
   autoComplete?: string;
+  maxLength?: number;
+  placeholder?: string;
 }) {
   return (
     <div>
@@ -551,6 +564,8 @@ function TextField({
         name={name}
         required={required}
         autoComplete={autoComplete}
+        maxLength={maxLength}
+        placeholder={placeholder}
         className="w-full px-3 py-2 rounded-md border border-mip-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-mip-purple/30"
       />
     </div>

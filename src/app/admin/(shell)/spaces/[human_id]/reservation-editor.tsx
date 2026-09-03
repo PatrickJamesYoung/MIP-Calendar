@@ -24,6 +24,7 @@ interface Reservation {
   requester_email: string;
   requester_phone: string | null;
   organization: string | null;
+  event_title: string | null;
   event_description: string | null;
   load_in_at: string;
   event_start_at: string;
@@ -107,6 +108,19 @@ export function ReservationEditor({ reservation, lines }: Props) {
             label="Organization"
             name="organization"
             defaultValue={reservation.organization ?? ""}
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+            Event title
+          </label>
+          <input
+            type="text"
+            name="event_title"
+            defaultValue={reservation.event_title ?? ""}
+            maxLength={200}
+            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
           />
         </div>
 

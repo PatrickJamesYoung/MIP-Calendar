@@ -151,6 +151,24 @@ function SettingField({
           defaultValue={stringValue}
           className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
         />
+      ) : spec.type === "boolean" ? (
+        // Hidden "off" companion so the form always submits *something*
+        // for this key — unchecked checkboxes would otherwise omit the
+        // entry entirely and the settings save would leave the old value.
+        <div className="flex items-center gap-2">
+          <input type="hidden" name={inputName} value="false" />
+          <input
+            id={inputName}
+            name={inputName}
+            type="checkbox"
+            defaultChecked={stringValue === "true"}
+            value="true"
+            className="h-4 w-4 rounded border-neutral-300"
+          />
+          <label htmlFor={inputName} className="text-sm text-neutral-700">
+            Enabled
+          </label>
+        </div>
       ) : spec.type === "string_list" ? (
         <textarea
           id={inputName}
@@ -209,6 +227,8 @@ function coerceForInput(value: unknown, type: SpaceSettingSpec["type"]): string 
       if (typeof value === "number") return String(value);
       if (typeof value === "string" && value.trim() !== "") return value;
       return "";
+    case "boolean":
+      return value === true || value === "true" ? "true" : "false";
     case "string_list":
       if (Array.isArray(value)) {
         return value

@@ -17,12 +17,28 @@ export async function saveSpaceSettings(formData: FormData) {
   const updates: { key: string; value: unknown }[] = [];
   const errors: string[] = [];
 
-  for (const [formKey, formVal] of formData.entries()) {
+  // Collect one entry per key. Checkbox fields pair a hidden "false"
+  // with a checkbox "true", so we need every value for a key and pick
+  // the winning one per type: booleans take the last (checked wins),
+  // everything else takes the last non-empty submission.
+  const seen = new Set<string>();
+  const keys = Array.from(formData.keys());
+  for (const formKey of keys) {
     if (!formKey.startsWith("key:")) continue;
+    if (seen.has(formKey)) continue;
+    seen.add(formKey);
     const settingKey = formKey.slice(4);
     const declaredType: SpaceSettingType =
       KNOWN_SPACE_SETTINGS.find((s) => s.key === settingKey)?.type ?? "string";
-    const raw = String(formVal ?? "");
+    const values = formData
+      .getAll(formKey)
+      .map((v) => String(v ?? ""));
+    const raw =
+      declaredType === "boolean"
+        ? values.includes("true")
+          ? "true"
+          : "false"
+        : values[values.length - 1] ?? "";
     try {
       const coerced = coerce(raw, declaredType);
       updates.push({ key: settingKey, value: coerced });
@@ -58,6 +74,8 @@ function coerce(raw: string, type: SpaceSettingType): unknown {
   switch (type) {
     case "string":
       return raw;
+    case "boolean":
+      return trimmed === "true";
     case "html":
       // Trust the TipTap-produced HTML from the client; it's rendered on
       // the storefront with dangerouslySetInnerHTML, mirroring the wiki
