@@ -18,6 +18,11 @@ const reserveSchema = z.object({
   load_out_at: z.string().min(1),
   acknowledged_tentative: z.literal("true"),
   spaces: z.string().min(1).max(1000),
+  org_tier: z.enum(["full", "mid", "low"]).optional(),
+  // JSON-encoded array of strings, e.g. '["Cricut","Projector"]'. Optional
+  // because the form only sends it when the art-production room is
+  // selected.
+  equipment_requested: z.string().max(2000).optional().or(z.literal("")),
 });
 
 export type SubmitResult =
@@ -92,13 +97,36 @@ export async function submitSpaceReservationAction(
   const { data: settingsRows, error: settingsErr } = await supabase
     .from("spaces_settings")
     .select("key,value")
-    .in("key", ["donation_min_hours", "reservation_id_prefix"]);
+    .in("key", [
+      "donation_min_hours",
+      "reservation_id_prefix",
+      "tier_full_multiplier",
+      "tier_mid_multiplier",
+      "tier_low_multiplier",
+      "art_production_slug",
+      "art_production_equipment",
+    ]);
   if (settingsErr) {
     return { ok: false, error: `Failed to load settings: ${settingsErr.message}` };
   }
   const s = new Map((settingsRows ?? []).map((r) => [r.key, r.value]));
   const minHours = Number(s.get("donation_min_hours") ?? 2);
   const idPrefix = (s.get("reservation_id_prefix") as string) ?? "SPACE";
+  const tierMultipliers: Record<"full" | "mid" | "low", number> = {
+    full: Number(s.get("tier_full_multiplier") ?? 1),
+    mid: Number(s.get("tier_mid_multiplier") ?? 0.85),
+    low: Number(s.get("tier_low_multiplier") ?? 0.65),
+  };
+  const artProductionSlug =
+    (s.get("art_production_slug") as string | undefined) ?? "";
+  const artProductionEquipmentRaw = s.get("art_production_equipment");
+  const artProductionEquipment: string[] = Array.isArray(
+    artProductionEquipmentRaw
+  )
+    ? (artProductionEquipmentRaw as unknown[])
+        .map((x) => (typeof x === "string" ? x : ""))
+        .filter((x) => x.length > 0)
+    : [];
 
   // ---- Resolve spaces -----------------------------------------------------
   const slugs = parseSpaceSlugs(v.spaces);
@@ -138,12 +166,38 @@ export async function submitSpaceReservationAction(
     });
   }
 
+  // ---- Sliding-scale tier ------------------------------------------------
+  const tier: "full" | "mid" | "low" = v.org_tier ?? "full";
+  const multiplier = tierMultipliers[tier] ?? 1;
+
+  // ---- Equipment (art & production room follow-up) -----------------------
+  // Only honored when the configured art-production slug is present in
+  // this reservation's selection. Otherwise we drop whatever was posted so
+  // stale form data can't smuggle equipment onto an unrelated request.
+  let equipmentRequested: string[] | null = null;
+  const artRoomIncluded =
+    artProductionSlug.length > 0 &&
+    slugs.includes(artProductionSlug);
+  if (artRoomIncluded && v.equipment_requested) {
+    try {
+      const parsedEquipment = JSON.parse(v.equipment_requested);
+      if (Array.isArray(parsedEquipment)) {
+        const allowed = new Set(artProductionEquipment);
+        const picked = parsedEquipment
+          .filter((x): x is string => typeof x === "string")
+          .filter((x) => allowed.has(x));
+        equipmentRequested = picked.length > 0 ? picked : null;
+      }
+    } catch {
+      // Ignore malformed equipment payloads; treat as none selected.
+    }
+  }
+
   // ---- Donation calc ------------------------------------------------------
   const rawHours = (loadOut.getTime() - loadIn.getTime()) / 3_600_000;
   const hoursBilled = Math.max(Math.ceil(rawHours * 100) / 100, minHours);
   const rateSum = lines.reduce((sum, l) => sum + l.rate_per_hour, 0);
   const subtotal = Math.round(rateSum * hoursBilled * 100) / 100;
-  const multiplier = 1;
   const contributionTotal = Math.round(subtotal * multiplier * 100) / 100;
 
   // ---- human_id -----------------------------------------------------------
@@ -159,6 +213,7 @@ export async function submitSpaceReservationAction(
       requester_email: v.requester_email.trim().toLowerCase(),
       requester_phone: v.requester_phone?.trim() || null,
       organization: v.organization?.trim() || null,
+      org_tier: tier,
       event_description: v.event_description.trim(),
       load_in_at: loadIn.toISOString(),
       event_start_at: eventStart.toISOString(),
@@ -168,6 +223,7 @@ export async function submitSpaceReservationAction(
       subtotal_full: subtotal,
       contribution_multiplier: multiplier,
       contribution_total: contributionTotal,
+      equipment_requested: equipmentRequested,
       acknowledged_tentative: true,
     })
     .select("id, human_id")

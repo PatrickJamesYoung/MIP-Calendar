@@ -34,6 +34,7 @@ interface Reservation {
   contribution_multiplier: number | null;
   contribution_total: number | null;
   internal_notes: string | null;
+  staffing_organizer: string | null;
 }
 
 interface Line {
@@ -141,6 +142,19 @@ export function ReservationEditor({ reservation, lines }: Props) {
             label="Load out"
             name="load_out_at"
             defaultValue={toLocalInput(reservation.load_out_at)}
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+            Staffing organizer (MIP-only)
+          </label>
+          <input
+            type="text"
+            name="staffing_organizer"
+            defaultValue={reservation.staffing_organizer ?? ""}
+            placeholder="Which MIP organizer is staffing this event?"
+            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
           />
         </div>
 
