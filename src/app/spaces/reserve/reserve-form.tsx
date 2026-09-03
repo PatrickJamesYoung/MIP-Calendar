@@ -18,8 +18,16 @@ interface Props {
   spaces: SpaceLine[];
   donationMinHours: number;
   donationDisclaimer: string;
+  tierLabels: { full: string; mid: string; low: string };
+  tierMultipliers: { full: number; mid: number; low: number };
+  /** Slug of the space that triggers the equipment follow-up. Empty = disabled. */
+  artProductionSlug: string;
+  /** Options shown as checkboxes when the art-production space is selected. */
+  artProductionEquipment: string[];
   turnstileSiteKey: string | null;
 }
+
+type Tier = "full" | "mid" | "low";
 
 /**
  * Returns "YYYY-MM-DDTHH:MM" for the next full hour in America/New_York
@@ -60,6 +68,10 @@ export function ReserveSpacesForm({
   spaces,
   donationMinHours,
   donationDisclaimer,
+  tierLabels,
+  tierMultipliers,
+  artProductionSlug,
+  artProductionEquipment,
   turnstileSiteKey,
 }: Props) {
   const [state, setState] = useState<State>({ kind: "idle" });
@@ -77,28 +89,51 @@ export function ReserveSpacesForm({
   const [eventEnd, setEventEnd] = useState(() => nextHourNyDatetimeLocal(27));
   const [loadOut, setLoadOut] = useState(() => nextHourNyDatetimeLocal(28));
 
+  // Sliding-scale tier (defaults to full; multipliers driven by settings).
+  const [tier, setTier] = useState<Tier>("full");
+
+  // Equipment follow-up: only shown when the configured art-production
+  // space is in the selection AND there are options to pick from.
+  const showEquipmentSection =
+    artProductionSlug.length > 0 &&
+    artProductionEquipment.length > 0 &&
+    spaces.some((sp) => sp.slug === artProductionSlug);
+  const [equipment, setEquipment] = useState<string[]>([]);
+
+  function toggleEquipment(item: string) {
+    setEquipment((prev) =>
+      prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]
+    );
+  }
+
   // Donation math (mirrors server-side calc)
-  const { hoursRaw, hoursBilled, rateSum, contributionTotal } = useMemo(() => {
-    const li = new Date(loadIn);
-    const lo = new Date(loadOut);
-    const rateSum = spaces.reduce((sum, sp) => sum + sp.ratePerHour, 0);
-    if (Number.isNaN(li.getTime()) || Number.isNaN(lo.getTime()) || lo <= li) {
+  const { hoursRaw, hoursBilled, rateSum, subtotalFull, contributionTotal } =
+    useMemo(() => {
+      const li = new Date(loadIn);
+      const lo = new Date(loadOut);
+      const rateSum = spaces.reduce((sum, sp) => sum + sp.ratePerHour, 0);
+      const multiplier = tierMultipliers[tier] ?? 1;
+      if (Number.isNaN(li.getTime()) || Number.isNaN(lo.getTime()) || lo <= li) {
+        const subtotal = Math.round(rateSum * donationMinHours * 100) / 100;
+        return {
+          hoursRaw: 0,
+          hoursBilled: donationMinHours,
+          rateSum,
+          subtotalFull: subtotal,
+          contributionTotal: Math.round(subtotal * multiplier * 100) / 100,
+        };
+      }
+      const raw = (lo.getTime() - li.getTime()) / 3_600_000;
+      const billed = Math.max(Math.ceil(raw * 100) / 100, donationMinHours);
+      const subtotal = Math.round(rateSum * billed * 100) / 100;
       return {
-        hoursRaw: 0,
-        hoursBilled: donationMinHours,
+        hoursRaw: raw,
+        hoursBilled: billed,
         rateSum,
-        contributionTotal: Math.round(rateSum * donationMinHours * 100) / 100,
+        subtotalFull: subtotal,
+        contributionTotal: Math.round(subtotal * multiplier * 100) / 100,
       };
-    }
-    const raw = (lo.getTime() - li.getTime()) / 3_600_000;
-    const billed = Math.max(Math.ceil(raw * 100) / 100, donationMinHours);
-    return {
-      hoursRaw: raw,
-      hoursBilled: billed,
-      rateSum,
-      contributionTotal: Math.round(rateSum * billed * 100) / 100,
-    };
-  }, [loadIn, loadOut, spaces, donationMinHours]);
+    }, [loadIn, loadOut, spaces, donationMinHours, tier, tierMultipliers]);
 
   // Turnstile setup
   useEffect(() => {
@@ -138,6 +173,12 @@ export function ReserveSpacesForm({
     }
     if (turnstileToken) fd.set("cf-turnstile-response", turnstileToken);
     fd.set("spaces", spaces.map((s) => s.slug).join(","));
+    fd.set("org_tier", tier);
+    // Persist equipment as a JSON array so it round-trips cleanly even
+    // if an item contains a comma.
+    if (showEquipmentSection) {
+      fd.set("equipment_requested", JSON.stringify(equipment));
+    }
 
     startTransition(async () => {
       const result = await submitSpaceReservationAction(fd);
@@ -330,7 +371,67 @@ export function ReserveSpacesForm({
               placeholder="Meeting, training, event — describe what you'll be doing and roughly how many people you're expecting."
             />
           </div>
+
+          <fieldset className="mt-4">
+            <legend className="mb-2 text-xs font-medium uppercase tracking-wide text-mip-gray-500">
+              How would you describe your organization? <span className="text-mip-purple">*</span>
+            </legend>
+            <div className="space-y-2">
+              {(["full", "mid", "low"] as const).map((k) => (
+                <label
+                  key={k}
+                  className={`flex items-start gap-2 rounded-md border px-3 py-2 cursor-pointer text-sm ${
+                    tier === k
+                      ? "border-mip-purple bg-mip-purple/5"
+                      : "border-mip-gray-200 bg-white hover:bg-mip-gray-50"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="org_tier_ui"
+                    value={k}
+                    checked={tier === k}
+                    onChange={() => setTier(k)}
+                    className="mt-1"
+                  />
+                  <span>{tierLabels[k]}</span>
+                </label>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-mip-gray-500">
+              This adjusts the suggested contribution. It&rsquo;s honor-system —
+              you can always pay less (or nothing).
+            </p>
+          </fieldset>
         </section>
+
+        {showEquipmentSection && (
+          <section className="rounded-lg border border-mip-gray-200 bg-white p-5">
+            <h2 className="font-medium text-mip-gray-900 mb-1">
+              Are you hoping to use any of our equipment?
+            </h2>
+            <p className="text-xs text-mip-gray-500 mb-3">
+              Optional. Check anything you&rsquo;d like to use — we&rsquo;ll
+              make sure it&rsquo;s available.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-4">
+              {artProductionEquipment.map((item) => (
+                <label
+                  key={item}
+                  className="flex items-start gap-2 text-sm text-mip-gray-700 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={equipment.includes(item)}
+                    onChange={() => toggleEquipment(item)}
+                    className="mt-1"
+                  />
+                  <span>{item}</span>
+                </label>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Donation summary */}
         <section className="rounded-lg border border-mip-gray-200 bg-white p-5">
@@ -352,6 +453,16 @@ export function ReserveSpacesForm({
               <dt>Per-hour rate ({spaces.length} space{spaces.length === 1 ? "" : "s"})</dt>
               <dd className="font-medium">${rateSum.toFixed(0)}/hr</dd>
             </div>
+            <div className="flex justify-between">
+              <dt>Full-rate subtotal</dt>
+              <dd className="font-medium">${subtotalFull.toFixed(0)}</dd>
+            </div>
+            {(tierMultipliers[tier] ?? 1) !== 1 && (
+              <div className="flex justify-between text-xs text-mip-gray-500">
+                <dt>Sliding-scale adjustment</dt>
+                <dd>×{(tierMultipliers[tier] ?? 1).toFixed(2)}</dd>
+              </div>
+            )}
             <div className="flex justify-between border-t border-mip-gray-100 pt-2 mt-2 text-base text-mip-gray-900">
               <dt className="font-medium">Recommended</dt>
               <dd className="font-medium">${contributionTotal.toFixed(0)}</dd>

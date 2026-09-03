@@ -66,7 +66,18 @@ export default async function ReserveSpacesPage({
     supabase
       .from("spaces_settings")
       .select("key,value")
-      .in("key", ["donation_min_hours", "donation_disclaimer"]),
+      .in("key", [
+        "donation_min_hours",
+        "donation_disclaimer",
+        "tier_full_label",
+        "tier_mid_label",
+        "tier_low_label",
+        "tier_full_multiplier",
+        "tier_mid_multiplier",
+        "tier_low_multiplier",
+        "art_production_slug",
+        "art_production_equipment",
+      ]),
   ]);
 
   const spaces = ((spacesRes.data as Space[] | null) ?? []).filter(
@@ -83,6 +94,27 @@ export default async function ReserveSpacesPage({
   const donationMinHours = Number(s.get("donation_min_hours") ?? 2);
   const donationDisclaimer =
     (s.get("donation_disclaimer") as string | undefined) ?? "";
+
+  const tierLabels = {
+    full: (s.get("tier_full_label") as string | undefined) ?? "Well-resourced organization",
+    mid: (s.get("tier_mid_label") as string | undefined) ?? "Small organization or coalition",
+    low: (s.get("tier_low_label") as string | undefined) ?? "Volunteer group or individual",
+  };
+  const tierMultipliers = {
+    full: Number(s.get("tier_full_multiplier") ?? 1),
+    mid: Number(s.get("tier_mid_multiplier") ?? 0.85),
+    low: Number(s.get("tier_low_multiplier") ?? 0.65),
+  };
+  const artProductionSlug =
+    (s.get("art_production_slug") as string | undefined) ?? "";
+  const artProductionEquipmentRaw = s.get("art_production_equipment");
+  const artProductionEquipment: string[] = Array.isArray(
+    artProductionEquipmentRaw
+  )
+    ? (artProductionEquipmentRaw as unknown[])
+        .map((v) => (typeof v === "string" ? v : ""))
+        .filter((v) => v.length > 0)
+    : [];
 
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null;
 
@@ -138,6 +170,10 @@ export default async function ReserveSpacesPage({
             }))}
             donationMinHours={donationMinHours}
             donationDisclaimer={donationDisclaimer}
+            tierLabels={tierLabels}
+            tierMultipliers={tierMultipliers}
+            artProductionSlug={artProductionSlug}
+            artProductionEquipment={artProductionEquipment}
             turnstileSiteKey={turnstileSiteKey}
           />
         )}

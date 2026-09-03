@@ -151,6 +151,14 @@ function SettingField({
           defaultValue={stringValue}
           className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
         />
+      ) : spec.type === "string_list" ? (
+        <textarea
+          id={inputName}
+          name={inputName}
+          defaultValue={stringValue}
+          rows={Math.max(4, stringValue.split(/\r?\n/).length + 1)}
+          className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+        />
       ) : (
         <input
           id={inputName}
@@ -201,6 +209,13 @@ function coerceForInput(value: unknown, type: SpaceSettingSpec["type"]): string 
       if (typeof value === "number") return String(value);
       if (typeof value === "string" && value.trim() !== "") return value;
       return "";
+    case "string_list":
+      if (Array.isArray(value)) {
+        return value
+          .map((x) => (typeof x === "string" ? x : JSON.stringify(x)))
+          .join("\n");
+      }
+      return typeof value === "string" ? value : JSON.stringify(value);
     default:
       return typeof value === "string" ? value : JSON.stringify(value);
   }

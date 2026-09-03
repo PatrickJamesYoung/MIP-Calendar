@@ -37,6 +37,8 @@ interface Reservation {
   coupon_code: string | null;
   acknowledged_tentative: boolean | null;
   internal_notes: string | null;
+  staffing_organizer: string | null;
+  equipment_requested: string[] | null;
   created_at: string;
 }
 
@@ -223,6 +225,7 @@ export default async function SpaceReservationDetail(props: {
               contribution_multiplier: Number(r.contribution_multiplier ?? 1),
               contribution_total: Number(r.contribution_total ?? 0),
               internal_notes: r.internal_notes,
+              staffing_organizer: r.staffing_organizer,
             }}
             lines={editorLines}
           />
@@ -259,6 +262,16 @@ export default async function SpaceReservationDetail(props: {
               )}
             </dl>
           </Panel>
+
+          {r.equipment_requested && r.equipment_requested.length > 0 && (
+            <Panel title="Equipment requested">
+              <ul className="list-disc pl-5 text-sm text-neutral-800 space-y-1">
+                {r.equipment_requested.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </Panel>
+          )}
 
           <Panel title="Activity">
             {activityData.length === 0 ? (

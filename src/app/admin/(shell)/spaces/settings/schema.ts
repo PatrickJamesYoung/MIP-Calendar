@@ -7,7 +7,15 @@
  * the right jsonb shape.
  */
 
-export type SpaceSettingType = "string" | "number" | "html";
+export type SpaceSettingType =
+  | "string"
+  | "number"
+  | "html"
+  /**
+   * A list of strings, edited as one item per line in a textarea. Coerced
+   * to a JSON array on save (blank lines dropped, each item trimmed).
+   */
+  | "string_list";
 
 export interface SpaceSettingSpec {
   key: string;
@@ -45,5 +53,53 @@ export const KNOWN_SPACE_SETTINGS: SpaceSettingSpec[] = [
     label: "Reservation ID prefix",
     type: "string",
     help: "Prefix used when minting human_id values, e.g. SPACE-20260827-A1B2.",
+  },
+  {
+    key: "tier_full_label",
+    label: "Sliding scale — full-rate label",
+    type: "string",
+    help: "Label shown next to the top tier on the reserve form.",
+  },
+  {
+    key: "tier_mid_label",
+    label: "Sliding scale — mid-rate label",
+    type: "string",
+    help: "Label shown next to the middle tier on the reserve form.",
+  },
+  {
+    key: "tier_low_label",
+    label: "Sliding scale — low-rate label",
+    type: "string",
+    help: "Label shown next to the low tier on the reserve form.",
+  },
+  {
+    key: "tier_full_multiplier",
+    label: "Sliding scale — full-rate multiplier",
+    type: "number",
+    help: "Multiplier applied to the full-rate subtotal for the top tier. Usually 1.",
+  },
+  {
+    key: "tier_mid_multiplier",
+    label: "Sliding scale — mid-rate multiplier",
+    type: "number",
+    help: "Multiplier applied to the full-rate subtotal for the middle tier.",
+  },
+  {
+    key: "tier_low_multiplier",
+    label: "Sliding scale — low-rate multiplier",
+    type: "number",
+    help: "Multiplier applied to the full-rate subtotal for the low tier.",
+  },
+  {
+    key: "art_production_slug",
+    label: "Art & production room slug",
+    type: "string",
+    help: "Slug of the space that triggers the equipment follow-up on the reserve form. Leave blank to disable the follow-up.",
+  },
+  {
+    key: "art_production_equipment",
+    label: "Art & production room equipment",
+    type: "string_list",
+    help: "One equipment option per line. These appear as checkboxes when the art & production room is in a request.",
   },
 ];

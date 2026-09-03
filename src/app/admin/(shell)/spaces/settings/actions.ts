@@ -70,6 +70,14 @@ function coerce(raw: string, type: SpaceSettingType): unknown {
         throw new Error(`not a valid number: ${trimmed}`);
       return n;
     }
+    case "string_list": {
+      // One item per line; trim each line, drop blanks. Stored as a JSON
+      // array so it round-trips via jsonb without extra parsing on read.
+      return raw
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    }
     default:
       return raw;
   }

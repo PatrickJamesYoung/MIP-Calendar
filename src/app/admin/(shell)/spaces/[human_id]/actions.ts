@@ -231,6 +231,7 @@ export async function updateReservationFields(formData: FormData) {
     "organization",
     "event_description",
     "internal_notes",
+    "staffing_organizer",
   ];
   for (const f of stringFields) {
     if (formData.has(f)) {
