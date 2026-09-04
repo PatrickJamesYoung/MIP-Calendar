@@ -5,12 +5,32 @@ import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { KNOWN_SPACE_SETTINGS, type SpaceSettingType } from "./schema";
 
+export type SaveSpaceSettingsState = {
+  ok: boolean;
+  message: string;
+  savedAt: number;
+};
+
+export const INITIAL_SAVE_STATE: SaveSpaceSettingsState = {
+  ok: false,
+  message: "",
+  savedAt: 0,
+};
+
 /**
  * Save any subset of spaces_settings. Only form entries with the
  * "key:<setting_key>" prefix are considered. Values are coerced by
  * declared type before being upserted as jsonb.
+ *
+ * useFormState-compatible: receives the previous state (ignored) and the
+ * FormData, and returns a fresh state carrying success/error and a
+ * bumped savedAt so the client can react to every save (including two
+ * consecutive successes).
  */
-export async function saveSpaceSettings(formData: FormData) {
+export async function saveSpaceSettings(
+  _prevState: SaveSpaceSettingsState,
+  formData: FormData
+): Promise<SaveSpaceSettingsState> {
   const admin = await requireAdmin();
   const supabase = createAdminClient();
 
@@ -48,11 +68,19 @@ export async function saveSpaceSettings(formData: FormData) {
   }
 
   if (errors.length) {
-    throw new Error(
-      `Some settings couldn't be saved:\n- ${errors.join("\n- ")}`
-    );
+    return {
+      ok: false,
+      message: `Some settings couldn't be saved:\n• ${errors.join("\n• ")}`,
+      savedAt: Date.now(),
+    };
   }
-  if (updates.length === 0) return;
+  if (updates.length === 0) {
+    return {
+      ok: true,
+      message: "Nothing to save — no fields changed.",
+      savedAt: Date.now(),
+    };
+  }
 
   const nowIso = new Date().toISOString();
   const { error } = await supabase.from("spaces_settings").upsert(
@@ -64,9 +92,22 @@ export async function saveSpaceSettings(formData: FormData) {
     })),
     { onConflict: "key" }
   );
-  if (error) throw new Error(`Failed to save settings: ${error.message}`);
+  if (error) {
+    return {
+      ok: false,
+      message: `Failed to save settings: ${error.message}`,
+      savedAt: Date.now(),
+    };
+  }
 
   revalidatePath("/admin/spaces/settings");
+
+  const count = updates.length;
+  return {
+    ok: true,
+    message: `Saved ${count} setting${count === 1 ? "" : "s"}.`,
+    savedAt: Date.now(),
+  };
 }
 
 function coerce(raw: string, type: SpaceSettingType): unknown {

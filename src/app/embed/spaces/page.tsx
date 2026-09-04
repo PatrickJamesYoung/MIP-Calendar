@@ -51,13 +51,31 @@ export default async function SpacesEmbedPage() {
     supabase
       .from("spaces_settings")
       .select("key,value")
-      .in("key", ["donation_min_hours"]),
+      .in("key", [
+        "donation_min_hours",
+        "tier_full_label",
+        "tier_mid_label",
+        "tier_low_label",
+        "tier_full_multiplier",
+        "tier_mid_multiplier",
+        "tier_low_multiplier",
+      ]),
   ]);
 
   const spaces = (spacesRes.data ?? []) as Space[];
   const settings = (settingsRes.data ?? []) as Setting[];
   const s = new Map(settings.map((row) => [row.key, row.value]));
   const donationMinHours = Number(s.get("donation_min_hours") ?? 2);
+  const tierLabels = {
+    full: (s.get("tier_full_label") as string | undefined) ?? "Well-resourced organization",
+    mid: (s.get("tier_mid_label") as string | undefined) ?? "Small organization or coalition",
+    low: (s.get("tier_low_label") as string | undefined) ?? "Volunteer group or individual",
+  };
+  const tierMultipliers = {
+    full: Number(s.get("tier_full_multiplier") ?? 1),
+    mid: Number(s.get("tier_mid_multiplier") ?? 0.85),
+    low: Number(s.get("tier_low_multiplier") ?? 0.65),
+  };
 
   // Absolute origin so the top-level navigation lands on the real reserve
   // page, not on the embedder's origin. Falls back to the production URL.
@@ -73,6 +91,8 @@ export default async function SpacesEmbedPage() {
         <SpacesBrowser
           spaces={spaces}
           donationMinHours={donationMinHours}
+          tierLabels={tierLabels}
+          tierMultipliers={tierMultipliers}
           embed
           reserveBaseUrl={reserveBaseUrl}
         />

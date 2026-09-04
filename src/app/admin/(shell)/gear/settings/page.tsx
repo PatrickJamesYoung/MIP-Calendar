@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { saveGearSettings } from "./actions";
+import { SaveSettingsForm } from "./save-settings-form";
 import { KNOWN_SETTINGS, GROUPS, type SettingSpec } from "./schema";
 
 export const dynamic = "force-dynamic";
@@ -77,7 +77,7 @@ export default async function GearSettingsPage() {
         </div>
       </div>
 
-      <form action={saveGearSettings} className="space-y-8">
+      <SaveSettingsForm>
         {GROUPS.map((g) => {
           const groupSettings = visibleSettings.filter((s) => s.group === g.id);
           if (groupSettings.length === 0) return null;
@@ -114,16 +114,7 @@ export default async function GearSettingsPage() {
           </section>
         )}
 
-        <div className="sticky bottom-4 z-10 flex justify-end">
-          <button
-            type="submit"
-            className="rounded-md px-6 py-2.5 text-sm font-semibold text-white shadow-lg"
-            style={{ backgroundColor: "var(--color-mip-purple)" }}
-          >
-            Save all settings
-          </button>
-        </div>
-      </form>
+      </SaveSettingsForm>
     </div>
   );
 }
