@@ -78,8 +78,32 @@ function parseYmd(s: string): Date {
   return new Date(y, m - 1, d);
 }
 
+// The calendar is always rendered in America/New_York time (MIP's building
+// timezone), regardless of where the admin viewer or the SSR server is.
+// Using the browser/server-local timezone was causing single-day evening
+// events stored as UTC (e.g. 22:00 UTC → 01:00 UTC next day) to render
+// spanning two calendar cells on the server (which runs in UTC) even
+// after the client re-hydrates.
+const CALENDAR_TZ = "America/New_York";
+
+const YMD_IN_TZ = new Intl.DateTimeFormat("en-CA", {
+  timeZone: CALENDAR_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+// Returns a wall-clock "start of day" Date for the given instant in the
+// calendar timezone. The returned Date is a plain local Date whose
+// year/month/day match the given instant's calendar-timezone date; time
+// component is 00:00 in the *local* (browser/server) zone, but we only
+// use year/month/day off it, so the local zone doesn't matter downstream.
 function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  // "en-CA" formats YYYY-MM-DD, which is easy to split.
+  const [y, m, dd] = YMD_IN_TZ.format(d)
+    .split("-")
+    .map((n) => parseInt(n, 10));
+  return new Date(y, m - 1, dd);
 }
 
 function addDays(d: Date, n: number): Date {
