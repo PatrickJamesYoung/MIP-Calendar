@@ -283,6 +283,16 @@ export interface PullResult {
  * from the daily cron. Idempotent — the unique index on gcal_event_id
  * turns re-runs into no-ops.
  */
+/**
+ * How far into the future to ingest events during a bootstrap /
+ * full-list read. We do NOT ingest past events at all — spaces
+ * reservations are forward-looking. This cap is critical because
+ * `singleEvents=true` expands each recurring event into one API
+ * result (and one reservation) per occurrence, so a weekly meeting
+ * that runs for a year without this cap becomes 52 reservations.
+ */
+const PULL_FUTURE_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+
 export async function pullGcalEvents(): Promise<PullResult> {
   if (!isGcalConfigured()) return { ok: true, skipped: "not-configured" };
 
@@ -305,27 +315,28 @@ export async function pullGcalEvents(): Promise<PullResult> {
     .single();
   const existingToken = (stateRow?.sync_token as string | null) ?? null;
 
+  // Bootstrap-only window: from now through PULL_FUTURE_WINDOW_MS out.
+  // These params are ignored by the API when a syncToken is provided
+  // (the delta read returns whatever changed since last sync).
+  const now = Date.now();
+  const bootstrapTimeMin = new Date(now).toISOString();
+  const bootstrapTimeMax = new Date(now + PULL_FUTURE_WINDOW_MS).toISOString();
+
   let listRes = await listAllEvents({
     calendarId,
     syncToken: existingToken ?? undefined,
-    // First-time bootstrap: only ingest events from today forward so
-    // we don't create years of historical reservations.
-    updatedMin: existingToken
-      ? undefined
-      : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    timeMin: existingToken ? undefined : bootstrapTimeMin,
+    timeMax: existingToken ? undefined : bootstrapTimeMax,
   });
 
   let bootstrapped = false;
   if (listRes.syncTokenExpired) {
-    // Fall back to a full list. We still cap to recent updates so a
-    // token that expired after months of downtime doesn't ingest the
-    // entire history.
+    // Fall back to a fresh bootstrap with the same forward window.
     bootstrapped = true;
     listRes = await listAllEvents({
       calendarId,
-      updatedMin: new Date(
-        Date.now() - 30 * 24 * 60 * 60 * 1000
-      ).toISOString(),
+      timeMin: bootstrapTimeMin,
+      timeMax: bootstrapTimeMax,
     });
   }
 

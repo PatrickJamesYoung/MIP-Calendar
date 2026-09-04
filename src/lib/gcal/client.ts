@@ -199,6 +199,19 @@ export interface ListEventsArgs {
    * avoid ingesting years of history.
    */
   updatedMin?: string;
+  /**
+   * If provided (and syncToken is NOT), only fetch events that start
+   * at or after this ISO timestamp. Google requires this to be a
+   * valid RFC3339 timestamp with an offset. Combined with `timeMax`
+   * this caps recurring-event expansion, which is critical when
+   * `singleEvents=true`.
+   */
+  timeMin?: string;
+  /**
+   * If provided (and syncToken is NOT), only fetch events that end
+   * before this ISO timestamp. See `timeMin` for why this matters.
+   */
+  timeMax?: string;
   pageToken?: string;
   maxResults?: number;
 }
@@ -229,9 +242,13 @@ export async function listEventsPage(
   if (args.syncToken) {
     params.set("syncToken", args.syncToken);
   } else {
-    // Full list mode. orderBy is only allowed without syncToken.
+    // Full list mode. orderBy, updatedMin, timeMin, and timeMax are
+    // only allowed when NOT using a syncToken. Google enforces this
+    // and returns 400 otherwise.
     params.set("orderBy", "updated");
     if (args.updatedMin) params.set("updatedMin", args.updatedMin);
+    if (args.timeMin) params.set("timeMin", args.timeMin);
+    if (args.timeMax) params.set("timeMax", args.timeMax);
   }
 
   const url = `${GCAL_API_BASE}/calendars/${encodeURIComponent(args.calendarId)}/events?${params.toString()}`;
