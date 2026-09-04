@@ -20,6 +20,8 @@ interface Props {
   donationDisclaimer: string;
   tierLabels: { full: string; mid: string; low: string };
   tierMultipliers: { full: number; mid: number; low: number };
+  /** Tier chosen on the /spaces menu; carried through the URL. */
+  initialTier: "full" | "mid" | "low";
   /** Slug of the space that triggers the equipment follow-up. Empty = disabled. */
   artProductionSlug: string;
   /** Options shown as checkboxes when the art-production space is selected. */
@@ -70,6 +72,7 @@ export function ReserveSpacesForm({
   donationDisclaimer,
   tierLabels,
   tierMultipliers,
+  initialTier,
   artProductionSlug,
   artProductionEquipment,
   turnstileSiteKey,
@@ -89,8 +92,55 @@ export function ReserveSpacesForm({
   const [eventEnd, setEventEnd] = useState(() => nextHourNyDatetimeLocal(27));
   const [loadOut, setLoadOut] = useState(() => nextHourNyDatetimeLocal(28));
 
-  // Sliding-scale tier (defaults to full; multipliers driven by settings).
-  const [tier, setTier] = useState<Tier>("full");
+  // Sliding-scale tier is chosen on the /spaces menu and passed through
+  // the URL. We keep it in state (and forward via a hidden input) so the
+  // donation preview here can react without another round trip.
+  const [tier] = useState<Tier>(initialTier);
+
+  // Auto-fill event start/end and load-out when the user changes load-in,
+  // but only while those downstream fields still hold auto-generated values.
+  // Once a user manually edits any of them, we stop overwriting.
+  const autoFilledStartRef = useRef(nextHourNyDatetimeLocal(25));
+  const autoFilledEndRef = useRef(nextHourNyDatetimeLocal(27));
+  const autoFilledOutRef = useRef(nextHourNyDatetimeLocal(28));
+
+  useEffect(() => {
+    const li = new Date(loadIn);
+    if (Number.isNaN(li.getTime())) return;
+
+    // Only cascade when downstream fields still match the last auto-fill.
+    const startIsAuto = eventStart === autoFilledStartRef.current;
+    const endIsAuto = eventEnd === autoFilledEndRef.current;
+    const outIsAuto = loadOut === autoFilledOutRef.current;
+
+    if (!startIsAuto && !endIsAuto && !outIsAuto) return;
+
+    const fmt = (d: Date) => {
+      const yy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mi = String(d.getMinutes()).padStart(2, "0");
+      return `${yy}-${mm}-${dd}T${hh}:${mi}`;
+    };
+
+    const nextStart = fmt(new Date(li.getTime() + 60 * 60 * 1000));
+    const nextEnd = fmt(new Date(li.getTime() + 3 * 60 * 60 * 1000));
+    const nextOut = fmt(new Date(li.getTime() + 4 * 60 * 60 * 1000));
+
+    if (startIsAuto && nextStart !== eventStart) {
+      autoFilledStartRef.current = nextStart;
+      setEventStart(nextStart);
+    }
+    if (endIsAuto && nextEnd !== eventEnd) {
+      autoFilledEndRef.current = nextEnd;
+      setEventEnd(nextEnd);
+    }
+    if (outIsAuto && nextOut !== loadOut) {
+      autoFilledOutRef.current = nextOut;
+      setLoadOut(nextOut);
+    }
+  }, [loadIn, eventStart, eventEnd, loadOut]);
 
   // Equipment follow-up: only shown when the configured art-production
   // space is in the selection AND there are options to pick from.
@@ -381,37 +431,29 @@ export function ReserveSpacesForm({
             />
           </div>
 
-          <fieldset className="mt-4">
-            <legend className="mb-2 text-xs font-medium uppercase tracking-wide text-mip-gray-500">
-              How would you describe your organization? <span className="text-mip-purple">*</span>
-            </legend>
-            <div className="space-y-2">
-              {(["full", "mid", "low"] as const).map((k) => (
-                <label
-                  key={k}
-                  className={`flex items-start gap-2 rounded-md border px-3 py-2 cursor-pointer text-sm ${
-                    tier === k
-                      ? "border-mip-purple bg-mip-purple/5"
-                      : "border-mip-gray-200 bg-white hover:bg-mip-gray-50"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="org_tier_ui"
-                    value={k}
-                    checked={tier === k}
-                    onChange={() => setTier(k)}
-                    className="mt-1"
-                  />
-                  <span>{tierLabels[k]}</span>
-                </label>
-              ))}
+          {/* Tier is chosen on the /spaces menu page; forwarded here through
+              the URL. We just render a small summary + link to change. */}
+          <div className="mt-4 rounded-md border border-mip-gray-200 bg-mip-gray-50 p-3 text-sm text-mip-gray-700">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="text-xs uppercase tracking-wide text-mip-gray-500">
+                  Sliding scale
+                </span>
+                <div className="font-medium text-mip-gray-900">
+                  {tierLabels[tier]}
+                  <span className="ml-1 text-xs font-normal text-mip-gray-500">
+                    ({Math.round((tierMultipliers[tier] ?? 1) * 100)}%)
+                  </span>
+                </div>
+              </div>
+              <Link
+                href="/spaces"
+                className="text-xs text-mip-purple hover:underline"
+              >
+                Change
+              </Link>
             </div>
-            <p className="mt-2 text-xs text-mip-gray-500">
-              This adjusts the suggested contribution. It&rsquo;s honor-system —
-              you can always pay less (or nothing).
-            </p>
-          </fieldset>
+          </div>
         </section>
 
         {showEquipmentSection && (

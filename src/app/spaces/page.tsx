@@ -45,7 +45,16 @@ export default async function SpacesIndexPage() {
     supabase
       .from("spaces_settings")
       .select("key,value")
-      .in("key", ["storefront_info_html", "donation_min_hours"]),
+      .in("key", [
+        "storefront_info_html",
+        "donation_min_hours",
+        "tier_full_label",
+        "tier_mid_label",
+        "tier_low_label",
+        "tier_full_multiplier",
+        "tier_mid_multiplier",
+        "tier_low_multiplier",
+      ]),
   ]);
 
   const spaces = (spacesRes.data ?? []) as Space[];
@@ -56,6 +65,16 @@ export default async function SpacesIndexPage() {
     (s.get("storefront_info_html") as string) ??
     "<p>Welcome. Use the form below to request space at our building.</p>";
   const donationMinHours = Number(s.get("donation_min_hours") ?? 2);
+  const tierLabels = {
+    full: (s.get("tier_full_label") as string | undefined) ?? "Well-resourced organization",
+    mid: (s.get("tier_mid_label") as string | undefined) ?? "Small organization or coalition",
+    low: (s.get("tier_low_label") as string | undefined) ?? "Volunteer group or individual",
+  };
+  const tierMultipliers = {
+    full: Number(s.get("tier_full_multiplier") ?? 1),
+    mid: Number(s.get("tier_mid_multiplier") ?? 0.85),
+    low: Number(s.get("tier_low_multiplier") ?? 0.65),
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -75,6 +94,8 @@ export default async function SpacesIndexPage() {
           <SpacesBrowser
             spaces={spaces}
             donationMinHours={donationMinHours}
+            tierLabels={tierLabels}
+            tierMultipliers={tierMultipliers}
           />
         </Suspense>
       </main>

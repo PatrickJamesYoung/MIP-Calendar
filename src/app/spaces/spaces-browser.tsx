@@ -18,9 +18,13 @@ interface Space {
   sort_order: number;
 }
 
+type Tier = "full" | "mid" | "low";
+
 interface Props {
   spaces: Space[];
   donationMinHours: number;
+  tierLabels: Record<Tier, string>;
+  tierMultipliers: Record<Tier, number>;
   /**
    * When true, the Continue link opens in the top-level window (breaks out
    * of the iframe) and points at an absolute reserve URL derived from
@@ -55,6 +59,8 @@ function hydrateSelectionFromParams(
 export function SpacesBrowser({
   spaces,
   donationMinHours,
+  tierLabels,
+  tierMultipliers,
   embed = false,
   reserveBaseUrl = "",
 }: Props) {
@@ -66,6 +72,12 @@ export function SpacesBrowser({
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [openSpace, setOpenSpace] = useState<Space | null>(null);
+  const [tier, setTier] = useState<Tier>(() => {
+    const t = searchParams?.get("tier");
+    return t === "full" || t === "mid" || t === "low" ? t : "full";
+  });
+
+  const multiplier = tierMultipliers[tier] ?? 1;
 
   const categories = useMemo(() => {
     const seen = new Set<string>();
@@ -108,9 +120,12 @@ export function SpacesBrowser({
     (sum, sp) => sum + Number(sp.suggested_contribution_per_hour ?? 0),
     0
   );
+  const adjustedRateSum = rateSum * multiplier;
 
   const reserveQuery = selected.size
-    ? `?spaces=${encodeURIComponent(Array.from(selected).sort().join(","))}`
+    ? `?spaces=${encodeURIComponent(
+        Array.from(selected).sort().join(",")
+      )}&tier=${tier}`
     : "";
   const reserveHref = selected.size
     ? embed
@@ -120,6 +135,17 @@ export function SpacesBrowser({
 
   return (
     <>
+      {/* Sliding-scale tier picker — moved here from the reserve form so
+          people see adjusted rates while browsing. */}
+      <div className="mb-6">
+        <TierPicker
+          tier={tier}
+          onChange={setTier}
+          labels={tierLabels}
+          multipliers={tierMultipliers}
+        />
+      </div>
+
       {/* Search + filters */}
       <div className="mb-6 flex flex-col md:flex-row gap-3 md:items-center">
         <div className="relative flex-1">
@@ -175,7 +201,9 @@ export function SpacesBrowser({
         <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((sp) => {
             const isSelected = selected.has(sp.slug);
-            const rate = Number(sp.suggested_contribution_per_hour ?? 0);
+            const baseRate = Number(sp.suggested_contribution_per_hour ?? 0);
+            const rate = baseRate * multiplier;
+            const showAdjusted = baseRate > 0 && multiplier !== 1;
             return (
               <li key={sp.id}>
                 <div
@@ -225,10 +253,15 @@ export function SpacesBrowser({
                     )}
                     <div className="mt-4 flex items-center justify-between">
                       <div className="text-sm text-mip-gray-700">
-                        {rate > 0 ? (
+                        {baseRate > 0 ? (
                           <>
                             <span className="font-medium">${rate.toFixed(0)}</span>
                             <span className="text-mip-gray-500"> / hour suggested</span>
+                            {showAdjusted && (
+                              <span className="ml-1 text-xs text-mip-gray-500">
+                                (was ${baseRate.toFixed(0)})
+                              </span>
+                            )}
                           </>
                         ) : (
                           <span className="text-mip-gray-500">No suggested donation</span>
@@ -264,7 +297,7 @@ export function SpacesBrowser({
               </div>
               {rateSum > 0 && (
                 <div className="text-xs text-mip-gray-500">
-                  ~${(rateSum * donationMinHours).toFixed(0)}+ suggested ({donationMinHours}-hour minimum)
+                  ~${(adjustedRateSum * donationMinHours).toFixed(0)}+ suggested ({donationMinHours}-hour minimum)
                 </div>
               )}
             </div>
@@ -298,6 +331,7 @@ export function SpacesBrowser({
       )}
 
       {/* Detail modal */}
+
       {openSpace && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -361,9 +395,14 @@ export function SpacesBrowser({
                   {Number(openSpace.suggested_contribution_per_hour) > 0 ? (
                     <>
                       <span className="font-medium">
-                        ${Number(openSpace.suggested_contribution_per_hour).toFixed(0)}
+                        ${(Number(openSpace.suggested_contribution_per_hour) * multiplier).toFixed(0)}
                       </span>
                       <span className="text-mip-gray-500"> / hour suggested</span>
+                      {multiplier !== 1 && (
+                        <span className="ml-1 text-xs text-mip-gray-500">
+                          (was ${Number(openSpace.suggested_contribution_per_hour).toFixed(0)})
+                        </span>
+                      )}
                     </>
                   ) : (
                     <span className="text-mip-gray-500">No suggested donation</span>
@@ -389,5 +428,61 @@ export function SpacesBrowser({
         </div>
       )}
     </>
+  );
+}
+
+// ────────────────── Tier picker ──────────────────
+
+function TierPicker({
+  tier,
+  onChange,
+  labels,
+  multipliers,
+}: {
+  tier: Tier;
+  onChange: (t: Tier) => void;
+  labels: Record<Tier, string>;
+  multipliers: Record<Tier, number>;
+}) {
+  return (
+    <fieldset className="rounded-lg border border-mip-gray-200 bg-white p-4">
+      <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-mip-gray-600">
+        Sliding scale
+      </legend>
+      <p className="mb-3 text-xs text-mip-gray-500">
+        Pick the tier that describes you. Suggested donations below adjust —
+        it&rsquo;s honor-system, you can always pay less (or nothing).
+      </p>
+      <div className="grid gap-2 md:grid-cols-3">
+        {(["full", "mid", "low"] as const).map((k) => {
+          const pct = Math.round((multipliers[k] ?? 1) * 100);
+          return (
+            <label
+              key={k}
+              className={`flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 text-sm ${
+                tier === k
+                  ? "border-mip-purple bg-mip-purple/5"
+                  : "border-mip-gray-300 bg-white hover:bg-mip-gray-50"
+              }`}
+            >
+              <input
+                type="radio"
+                name="tier"
+                value={k}
+                checked={tier === k}
+                onChange={() => onChange(k)}
+                className="mt-1"
+              />
+              <span className="leading-snug">
+                {labels[k]}
+                <span className="ml-1 text-xs text-mip-gray-500">
+                  ({pct}%)
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }

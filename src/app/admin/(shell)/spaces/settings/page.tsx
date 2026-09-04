@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { saveSpaceSettings } from "./actions";
 import { KNOWN_SPACE_SETTINGS, type SpaceSettingSpec } from "./schema";
 import { TiptapEditor } from "@/components/admin/wiki/tiptap-editor";
+import { SaveSettingsForm } from "./save-settings-form";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +69,7 @@ export default async function SpacesSettingsPage() {
         </div>
       </div>
 
-      <form action={saveSpaceSettings} className="space-y-6">
+      <SaveSettingsForm>
         <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="mb-4 space-y-4">
             {KNOWN_SPACE_SETTINGS.map((spec) => (
@@ -98,16 +98,7 @@ export default async function SpacesSettingsPage() {
             </div>
           </section>
         )}
-
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-neutral-800"
-          >
-            Save settings
-          </button>
-        </div>
-      </form>
+      </SaveSettingsForm>
     </div>
   );
 }

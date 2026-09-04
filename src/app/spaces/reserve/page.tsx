@@ -44,13 +44,20 @@ function parseSpaceSlugs(raw: string | undefined): string[] {
   return out;
 }
 
+type Tier = "full" | "mid" | "low";
+
+function parseTier(raw: string | undefined): Tier {
+  return raw === "full" || raw === "mid" || raw === "low" ? raw : "full";
+}
+
 export default async function ReserveSpacesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ spaces?: string }>;
+  searchParams: Promise<{ spaces?: string; tier?: string }>;
 }) {
   const params = await searchParams;
   const slugs = parseSpaceSlugs(params.spaces);
+  const initialTier = parseTier(params.tier);
 
   const supabase = await createClient();
 
@@ -172,6 +179,7 @@ export default async function ReserveSpacesPage({
             donationDisclaimer={donationDisclaimer}
             tierLabels={tierLabels}
             tierMultipliers={tierMultipliers}
+            initialTier={initialTier}
             artProductionSlug={artProductionSlug}
             artProductionEquipment={artProductionEquipment}
             turnstileSiteKey={turnstileSiteKey}

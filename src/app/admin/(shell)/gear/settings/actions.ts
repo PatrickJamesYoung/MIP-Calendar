@@ -5,13 +5,30 @@ import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { KNOWN_SETTINGS, type SettingType } from "./schema";
 
+export type SaveGearSettingsState = {
+  ok: boolean;
+  message: string;
+  savedAt: number;
+};
+
+export const INITIAL_SAVE_STATE: SaveGearSettingsState = {
+  ok: false,
+  message: "",
+  savedAt: 0,
+};
+
 /**
  * Saves any subset of gear_settings. Only rows whose key matches
  * `key:<setting_key>` in the form are updated. Value coercion depends
  * on the declared type in KNOWN_SETTINGS. Unknown keys fall back to
  * raw-JSON parsing.
+ *
+ * useFormState-compatible so the client can render an inline save banner.
  */
-export async function saveGearSettings(formData: FormData) {
+export async function saveGearSettings(
+  _prevState: SaveGearSettingsState,
+  formData: FormData
+): Promise<SaveGearSettingsState> {
   const admin = await requireAdmin();
   const supabase = createAdminClient();
 
@@ -34,9 +51,19 @@ export async function saveGearSettings(formData: FormData) {
   }
 
   if (errors.length) {
-    throw new Error(`Some settings couldn't be saved:\n- ${errors.join("\n- ")}`);
+    return {
+      ok: false,
+      message: `Some settings couldn't be saved:\n• ${errors.join("\n• ")}`,
+      savedAt: Date.now(),
+    };
   }
-  if (updates.length === 0) return;
+  if (updates.length === 0) {
+    return {
+      ok: true,
+      message: "Nothing to save — no fields changed.",
+      savedAt: Date.now(),
+    };
+  }
 
   const nowIso = new Date().toISOString();
   const { error } = await supabase.from("gear_settings").upsert(
@@ -48,9 +75,22 @@ export async function saveGearSettings(formData: FormData) {
     })),
     { onConflict: "key" }
   );
-  if (error) throw new Error(`Failed to save settings: ${error.message}`);
+  if (error) {
+    return {
+      ok: false,
+      message: `Failed to save settings: ${error.message}`,
+      savedAt: Date.now(),
+    };
+  }
 
   revalidatePath("/admin/gear/settings");
+
+  const count = updates.length;
+  return {
+    ok: true,
+    message: `Saved ${count} setting${count === 1 ? "" : "s"}.`,
+    savedAt: Date.now(),
+  };
 }
 
 function coerce(raw: string, type: SettingType): unknown {
