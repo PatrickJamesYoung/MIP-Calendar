@@ -24,8 +24,10 @@ export interface CalendarReservation {
   status: CalendarStatus;
   requester_name: string;
   organization: string | null;
+  event_title: string | null;
   event_start_at: string; // ISO
   event_end_at: string; // ISO
+  space_names: string[]; // comma-joined in the bar label
 }
 
 interface Props {
@@ -49,6 +51,23 @@ const STATUS_LABEL: Record<CalendarStatus, string> = {
   in_use: "In use",
   completed: "Completed",
 };
+
+// Build the bar label as "<event title> - <spaces comma-sep> - <organization>".
+// Missing pieces (no title, no lines, no org) are dropped and the
+// separators collapse so the label never has leading, trailing, or
+// doubled " - " segments. Falls back to the requester's name if nothing
+// else is set, so a bar never renders as empty text.
+function formatBarLabel(r: CalendarReservation): string {
+  const parts: string[] = [];
+  const title = (r.event_title ?? "").trim();
+  if (title) parts.push(title);
+  const spaces = r.space_names.join(", ");
+  if (spaces) parts.push(spaces);
+  const org = (r.organization ?? "").trim();
+  if (org) parts.push(org);
+  if (parts.length === 0) return r.requester_name;
+  return parts.join(" - ");
+}
 
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -208,13 +227,10 @@ export function SpaceReservationsCalendar({ reservations, initialMonth }: Props)
                 const leftPct = (bar.startCol / 7) * 100;
                 const widthPct = (bar.span / 7) * 100;
                 const topPx = 22 + bar.lane * 20;
-                const title = `${bar.reservation.human_id} · ${
-                  bar.reservation.requester_name
-                }${
-                  bar.reservation.organization
-                    ? ` (${bar.reservation.organization})`
-                    : ""
-                } · ${STATUS_LABEL[bar.reservation.status]}`;
+                const label = formatBarLabel(bar.reservation);
+                // Tooltip keeps the human_id + status for context, since
+                // the visible bar drops them for space.
+                const tooltip = `${bar.reservation.human_id} · ${label} · ${STATUS_LABEL[bar.reservation.status]}`;
                 return (
                   <Link
                     key={`${bar.reservation.id}-${bi}`}
@@ -231,9 +247,9 @@ export function SpaceReservationsCalendar({ reservations, initialMonth }: Props)
                       borderRadius: 3,
                       lineHeight: "14px",
                     }}
-                    title={title}
+                    title={tooltip}
                   >
-                    {bar.reservation.human_id} · {bar.reservation.requester_name}
+                    {label}
                   </Link>
                 );
               })}

@@ -135,6 +135,44 @@ export function ReserveSpacesForm({
       };
     }, [loadIn, loadOut, spaces, donationMinHours, tier, tierMultipliers]);
 
+  // Live conflict probe. Debounced ~500ms so we don't fetch on every
+  // keystroke while the user is typing a time. Only fires when the
+  // window is valid (parsable + end after start).
+  const [conflict, setConflict] = useState<null | { count: number }>(null);
+  useEffect(() => {
+    const li = new Date(loadIn);
+    const lo = new Date(loadOut);
+    if (Number.isNaN(li.getTime()) || Number.isNaN(lo.getTime()) || lo <= li) {
+      setConflict(null);
+      return;
+    }
+    const ctrl = new AbortController();
+    const t = window.setTimeout(async () => {
+      try {
+        const qs = new URLSearchParams({ start: loadIn, end: loadOut });
+        const res = await fetch(`/api/spaces/check-conflict?${qs.toString()}`, {
+          signal: ctrl.signal,
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const j = (await res.json()) as {
+          ok?: boolean;
+          overlap?: boolean;
+          count?: number;
+        };
+        if (!j.ok) return;
+        setConflict(j.overlap ? { count: j.count ?? 0 } : null);
+      } catch {
+        // Silently swallow: the warning is advisory. A network hiccup
+        // shouldn't block submission or spam a red error banner.
+      }
+    }, 500);
+    return () => {
+      window.clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [loadIn, loadOut]);
+
   // Turnstile setup
   useEffect(() => {
     if (!turnstileSiteKey || turnstileWidgetIdRef.current) return;
@@ -327,6 +365,25 @@ export function ReserveSpacesForm({
               onChange={setLoadOut}
             />
           </div>
+          {conflict && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="mt-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+            >
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="font-medium">Heads up!</p>
+                <p className="mt-1">
+                  There is another event in the building during all or part
+                  of the time you requested. It&rsquo;s a big space so we can
+                  usually accommodate multiple simultaneous events, but a MIP
+                  organizer will need to look more closely at the schedule to
+                  make sure there isn&rsquo;t a scheduling conflict.
+                </p>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Requester */}

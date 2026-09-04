@@ -181,17 +181,46 @@ export default async function AdminSpacesPage({
     now.getMonth() + 1,
     1
   );
+  // Include event_title + each reserved space's name via the
+  // spaces_reservation_lines join so the calendar bar can render
+  // "<title> - <space names comma-sep> - <organization>". We pull
+  // name_snapshot (not spaces.name) so post-facto renames of a space
+  // in the catalog don't rewrite the label on past reservations.
   const { data: calendarRowsRaw } = await supabase
     .from("spaces_reservations")
     .select(
-      "id, human_id, status, requester_name, organization, event_start_at, event_end_at"
+      "id, human_id, status, requester_name, organization, event_title, event_start_at, event_end_at, spaces_reservation_lines(name_snapshot)"
     )
     .in("status", CALENDAR_STATUSES)
     .gte("event_end_at", calendarWindowStart.toISOString())
     .lt("event_start_at", calendarWindowEnd.toISOString())
     .order("event_start_at", { ascending: true })
     .limit(1000);
-  const calendarReservations = (calendarRowsRaw ?? []) as CalendarReservation[];
+  const calendarReservations: CalendarReservation[] = (calendarRowsRaw ?? []).map(
+    (r: {
+      id: string;
+      human_id: string;
+      status: CalendarReservation["status"];
+      requester_name: string;
+      organization: string | null;
+      event_title: string | null;
+      event_start_at: string;
+      event_end_at: string;
+      spaces_reservation_lines?: { name_snapshot: string | null }[] | null;
+    }) => ({
+      id: r.id,
+      human_id: r.human_id,
+      status: r.status,
+      requester_name: r.requester_name,
+      organization: r.organization,
+      event_title: r.event_title,
+      event_start_at: r.event_start_at,
+      event_end_at: r.event_end_at,
+      space_names: (r.spaces_reservation_lines ?? [])
+        .map((l) => (l.name_snapshot ?? "").trim())
+        .filter((n) => n.length > 0),
+    })
+  );
 
   return (
     <div>
