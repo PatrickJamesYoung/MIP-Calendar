@@ -282,15 +282,19 @@ function buildMonthGrid(cursor: Date, reservations: CalendarReservation[]): Grid
     if (daysBetween(pickup, gridEnd) < 0) continue;
 
     // Clip to grid.
+    // daysBetween(a, b) is b - a, so `< 0` on (gridStart, pickup) means
+    // pickup < gridStart (clamp to gridStart); `> 0` on (ret, gridEnd)
+    // means gridEnd > ret (reservation ends within grid, use ret).
     const visStart = daysBetween(gridStart, pickup) < 0 ? gridStart : pickup;
-    const visEnd = daysBetween(ret, gridEnd) < 0 ? ret : gridEnd;
+    const visEnd = daysBetween(ret, gridEnd) > 0 ? ret : gridEnd;
 
     let cursorDay = visStart;
     while (daysBetween(cursorDay, visEnd) >= 0) {
       const weekIdx = Math.floor(daysBetween(gridStart, cursorDay) / 7);
       const weekStart = addDays(gridStart, weekIdx * 7);
       const weekEnd = addDays(weekStart, 6);
-      const segEnd = daysBetween(visEnd, weekEnd) < 0 ? visEnd : weekEnd;
+      // Clip this week's segment to the earlier of (visible end, week end).
+      const segEnd = daysBetween(visEnd, weekEnd) > 0 ? visEnd : weekEnd;
       const startCol = daysBetween(weekStart, cursorDay);
       const span = daysBetween(cursorDay, segEnd) + 1;
       weeks[weekIdx].bars.push({
