@@ -296,7 +296,14 @@ const PULL_FUTURE_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 export async function pullGcalEvents(): Promise<PullResult> {
   if (!isGcalConfigured()) return { ok: true, skipped: "not-configured" };
 
+  const t0 = Date.now();
+  const timings: Record<string, number> = {};
+  const mark = (label: string, from: number) => {
+    timings[label] = Date.now() - from;
+  };
+
   const supabase = createAdminClient();
+  const tSettings = Date.now();
   const settings = await loadSettings(supabase, [
     "gcal_calendar_id",
     "gcal_pull_enabled",
@@ -306,14 +313,17 @@ export async function pullGcalEvents(): Promise<PullResult> {
   const pullEnabled = readBool(settings, "gcal_pull_enabled");
   if (!pullEnabled || !calendarId) return { ok: true, skipped: "disabled" };
   const idPrefix = readString(settings, "reservation_id_prefix") || "SPACE";
+  mark("settings_ms", tSettings);
 
   // Load the persisted syncToken (if any).
+  const tState = Date.now();
   const { data: stateRow } = await supabase
     .from("spaces_gcal_sync_state")
     .select("sync_token")
     .eq("id", 1)
     .single();
   const existingToken = (stateRow?.sync_token as string | null) ?? null;
+  mark("state_load_ms", tState);
 
   // Bootstrap-only window: from now through PULL_FUTURE_WINDOW_MS out.
   // These params are ignored by the API when a syncToken is provided
@@ -322,6 +332,7 @@ export async function pullGcalEvents(): Promise<PullResult> {
   const bootstrapTimeMin = new Date(now).toISOString();
   const bootstrapTimeMax = new Date(now + PULL_FUTURE_WINDOW_MS).toISOString();
 
+  const tList = Date.now();
   let listRes = await listAllEvents({
     calendarId,
     syncToken: existingToken ?? undefined,
@@ -339,95 +350,189 @@ export async function pullGcalEvents(): Promise<PullResult> {
       timeMax: bootstrapTimeMax,
     });
   }
+  mark("gcal_list_ms", tList);
+  const fetched = listRes.items.length;
 
-  let created = 0;
-  let cancelled = 0;
+  // ---- Bucket events into skip / cancel / candidate-insert ----
+  //
+  // The old implementation walked events one-by-one and made a fresh
+  // DB roundtrip per event (SELECT for human-id collisions + SELECT
+  // for cancellation matches + INSERT). At ~50-100ms per roundtrip on
+  // the Supabase pooler that trivially blew Vercel's 60s function
+  // budget on bootstraps with hundreds of expanded recurring events.
+  //
+  // We now:
+  //   1. Fetch every existing (gcal_event_id, id, status, origin) in
+  //      a single query keyed by the ids in this batch.
+  //   2. Bulk-update cancellations with a single UPDATE .. WHERE IN.
+  //   3. Bulk-insert new events with a single INSERT.
+  //   4. Generate human IDs client-side (32^4 = ~1M suffix space per
+  //      day, batch size < 1000, so collision risk is negligible; the
+  //      unique index on gcal_event_id already guards the important
+  //      idempotency invariant, and a duplicate human_id from a
+  //      collision would just fail the batch and be picked up on the
+  //      next run).
+  const ownEvents: string[] = []; // event ids we originated on the web
+  const cancelIds: string[] = [];
+  const candidates: Array<{
+    gcal_event_id: string;
+    gcal_html_link: string | null;
+    event_title: string | null;
+    event_description: string | null;
+    start: string;
+    end: string;
+  }> = [];
   let ignored = 0;
 
   for (const ev of listRes.items) {
-    const isOurs =
-      ev.extendedProperties?.private?.mip_origin === "web";
+    const isOurs = ev.extendedProperties?.private?.mip_origin === "web";
     if (isOurs) {
-      // Skip our own writes so we don't mirror-loop.
+      ownEvents.push(ev.id);
       ignored++;
       continue;
     }
-
     if (ev.status === "cancelled") {
-      const { data: match } = await supabase
-        .from("spaces_reservations")
-        .select("id, status, origin")
-        .eq("gcal_event_id", ev.id)
-        .maybeSingle();
-      if (match && match.origin === "gcal" && match.status !== "cancelled") {
-        await supabase
-          .from("spaces_reservations")
-          .update({
-            status: "cancelled",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", match.id);
-        await supabase.from("spaces_activity").insert({
-          reservation_id: match.id,
-          actor_email: null,
-          action: "status_changed",
-          detail: { status: "cancelled", source: "gcal-sync" },
-        });
-        cancelled++;
-      } else {
-        ignored++;
-      }
+      cancelIds.push(ev.id);
       continue;
     }
-
     const start = ev.start?.dateTime ?? ev.start?.date;
     const end = ev.end?.dateTime ?? ev.end?.date;
     if (!start || !end) {
       ignored++;
       continue;
     }
-
-    // Insert (unique index on gcal_event_id makes this a no-op on repeat).
-    const humanId = await generateHumanId(supabase, idPrefix);
-    const { error: insErr } = await supabase
-      .from("spaces_reservations")
-      .insert({
-        human_id: humanId,
-        status: "approved",
-        origin: "gcal",
-        gcal_event_id: ev.id,
-        gcal_html_link: ev.htmlLink ?? null,
-        event_title: ev.summary ?? null,
-        event_description: ev.description ?? null,
-        requester_name: "Google Calendar",
-        requester_email: "calendar@movementinfrastructureproject.org",
-        organization: null,
-        event_start_at: start,
-        event_end_at: end,
-        load_in_at: start,
-        load_out_at: end,
-        hours_billed: 0,
-        subtotal_full: 0,
-        contribution_multiplier: 1,
-        contribution_total: 0,
-        acknowledged_tentative: true,
-      });
-
-    if (insErr) {
-      // 23505 = duplicate key (unique index on gcal_event_id). Not an
-      // error — just a re-run of an already-ingested event.
-      const msg = insErr.message ?? "";
-      if (/duplicate key|23505/i.test(msg)) {
-        ignored++;
-        continue;
-      }
-      // Anything else: keep going but note it so one bad event doesn't
-      // wedge the whole sync.
-      ignored++;
-      continue;
-    }
-    created++;
+    candidates.push({
+      gcal_event_id: ev.id,
+      gcal_html_link: ev.htmlLink ?? null,
+      event_title: ev.summary ?? null,
+      event_description: ev.description ?? null,
+      start,
+      end,
+    });
   }
+
+  // ---- Load existing rows for every event we might touch, in one query ----
+  const eventIdsToLookup = Array.from(
+    new Set<string>([
+      ...cancelIds,
+      ...candidates.map((c) => c.gcal_event_id),
+    ])
+  );
+  const tExisting = Date.now();
+  const existing = new Map<
+    string,
+    { id: string; status: string; origin: string | null }
+  >();
+  // Postgres has a ~65k param cap; chunk defensively at 500.
+  for (let i = 0; i < eventIdsToLookup.length; i += 500) {
+    const chunk = eventIdsToLookup.slice(i, i + 500);
+    const { data } = await supabase
+      .from("spaces_reservations")
+      .select("id, status, origin, gcal_event_id")
+      .in("gcal_event_id", chunk);
+    for (const row of data ?? []) {
+      const gid = (row as { gcal_event_id: string | null }).gcal_event_id;
+      if (!gid) continue;
+      existing.set(gid, {
+        id: (row as { id: string }).id,
+        status: (row as { status: string }).status,
+        origin: (row as { origin: string | null }).origin,
+      });
+    }
+  }
+  mark("existing_lookup_ms", tExisting);
+
+  // ---- Handle cancellations in one UPDATE ----
+  let cancelled = 0;
+  const cancelRowIds: string[] = [];
+  for (const gid of cancelIds) {
+    const match = existing.get(gid);
+    if (match && match.origin === "gcal" && match.status !== "cancelled") {
+      cancelRowIds.push(match.id);
+    } else {
+      ignored++;
+    }
+  }
+  const tCancel = Date.now();
+  if (cancelRowIds.length > 0) {
+    const nowIsoCancel = new Date().toISOString();
+    // Chunk both queries to stay well under param limits.
+    for (let i = 0; i < cancelRowIds.length; i += 500) {
+      const chunk = cancelRowIds.slice(i, i + 500);
+      await supabase
+        .from("spaces_reservations")
+        .update({ status: "cancelled", updated_at: nowIsoCancel })
+        .in("id", chunk);
+      await supabase.from("spaces_activity").insert(
+        chunk.map((rid) => ({
+          reservation_id: rid,
+          actor_email: null,
+          action: "status_changed",
+          detail: { status: "cancelled", source: "gcal-sync" },
+        }))
+      );
+      cancelled += chunk.length;
+    }
+  }
+  mark("cancel_ms", tCancel);
+
+  // ---- Handle new inserts in one INSERT ----
+  const toInsert = candidates.filter((c) => !existing.has(c.gcal_event_id));
+  ignored += candidates.length - toInsert.length; // already-present candidates
+  const tInsert = Date.now();
+  let created = 0;
+  if (toInsert.length > 0) {
+    const yyyymmdd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const rows = toInsert.map((c) => ({
+      human_id: `${idPrefix}-${yyyymmdd}-${randomSuffix(6)}`,
+      status: "approved",
+      origin: "gcal",
+      gcal_event_id: c.gcal_event_id,
+      gcal_html_link: c.gcal_html_link,
+      event_title: c.event_title,
+      event_description: c.event_description,
+      requester_name: "Google Calendar",
+      requester_email: "calendar@movementinfrastructureproject.org",
+      organization: null,
+      event_start_at: c.start,
+      event_end_at: c.end,
+      load_in_at: c.start,
+      load_out_at: c.end,
+      hours_billed: 0,
+      subtotal_full: 0,
+      contribution_multiplier: 1,
+      contribution_total: 0,
+      acknowledged_tentative: true,
+    }));
+    for (let i = 0; i < rows.length; i += 200) {
+      const chunk = rows.slice(i, i + 200);
+      const { error, count } = await supabase
+        .from("spaces_reservations")
+        .insert(chunk, { count: "exact" });
+      if (error) {
+        // A duplicate-key collision on gcal_event_id (rare given the
+        // pre-lookup, but possible in a race with a concurrent run)
+        // aborts the whole insert; fall back to per-row inserts so
+        // one bad event doesn't wedge the batch.
+        if (/duplicate key|23505/i.test(error.message ?? "")) {
+          for (const row of chunk) {
+            const { error: rowErr } = await supabase
+              .from("spaces_reservations")
+              .insert(row);
+            if (!rowErr) created++;
+            else ignored++;
+          }
+        } else {
+          // Log but don't throw — partial progress is better than none.
+          console.error("gcal-sync insert-chunk-failed:", error.message);
+          ignored += chunk.length;
+        }
+      } else {
+        created += count ?? chunk.length;
+      }
+    }
+  }
+  mark("insert_ms", tInsert);
 
   // Persist the new syncToken so the next run is a cheap delta.
   const nowIso = new Date().toISOString();
@@ -440,13 +545,22 @@ export async function pullGcalEvents(): Promise<PullResult> {
   if (bootstrapped || !existingToken) {
     updatePayload.last_full_sync_at = nowIso;
   }
+  const tPersist = Date.now();
   await supabase
     .from("spaces_gcal_sync_state")
     .upsert(updatePayload, { onConflict: "id" });
+  mark("persist_state_ms", tPersist);
+
+  timings.total_ms = Date.now() - t0;
+  // Log so a scheduled failure's next successful run tells us where
+  // the time went (Vercel captures console output on function logs).
+  console.log(
+    `[gcal-sync] fetched=${fetched} own=${ownEvents.length} cancelled=${cancelled} created=${created} ignored=${ignored} bootstrapped=${bootstrapped} timings=${JSON.stringify(timings)}`
+  );
 
   return {
     ok: true,
-    fetched: listRes.items.length,
+    fetched,
     created,
     cancelled,
     ignored,
@@ -454,31 +568,7 @@ export async function pullGcalEvents(): Promise<PullResult> {
   };
 }
 
-// ---------- ID minting (mirrors reserve/actions.ts) ----------
-
-/**
- * Duplicated from `src/app/spaces/reserve/actions.ts` so the sync
- * doesn't need to import a server-action module. Keeping the copy
- * small — this is the only piece we need.
- */
-async function generateHumanId(
-  supabase: SupabaseClient,
-  prefix: string
-): Promise<string> {
-  const yyyymmdd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const suffix = randomSuffix(4);
-    const candidate = `${prefix}-${yyyymmdd}-${suffix}`;
-    const { data } = await supabase
-      .from("spaces_reservations")
-      .select("id")
-      .eq("human_id", candidate)
-      .maybeSingle();
-    if (!data) return candidate;
-  }
-  // Fall back to a longer suffix if we somehow collided 10 times.
-  return `${prefix}-${yyyymmdd}-${randomSuffix(8)}`;
-}
+// ---------- ID minting ----------
 
 function randomSuffix(len: number): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Crockford-ish
