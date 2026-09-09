@@ -15,7 +15,12 @@ import { pullGcalEvents } from "@/lib/gcal/sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// 300s is the Vercel Pro Node runtime cap. The daily sync's cost is
+// dominated by the DB writes when a bootstrap or a large delta lands;
+// with the bulk-insert rewrite (see src/lib/gcal/sync.ts) it should
+// finish in a few seconds even on a full re-bootstrap of a few hundred
+// events, but 300s gives headroom for a bad day.
+export const maxDuration = 300;
 
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
