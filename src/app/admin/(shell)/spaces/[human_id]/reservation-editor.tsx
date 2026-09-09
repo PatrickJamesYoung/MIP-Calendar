@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { updateReservationFields } from "./actions";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import {
+  replaceReservationSpaces,
+  updateReservationFields,
+} from "./actions";
 
 /**
  * Basic single-form editor for a space reservation.
@@ -46,9 +50,15 @@ interface Line {
   line_full: number;
 }
 
+interface CatalogSpace {
+  slug: string;
+  name: string;
+}
+
 interface Props {
   reservation: Reservation;
   lines: Line[];
+  catalogSpaces: CatalogSpace[];
 }
 
 function toLocalInput(iso: string | null): string {
@@ -70,7 +80,12 @@ function toLocalInput(iso: string | null): string {
   return `${get("year")}-${get("month")}-${get("day")}T${hour}:${get("minute")}`;
 }
 
-export function ReservationEditor({ reservation, lines }: Props) {
+export function ReservationEditor({
+  reservation,
+  lines,
+  catalogSpaces,
+}: Props) {
+  const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -269,8 +284,130 @@ export function ReservationEditor({ reservation, lines }: Props) {
           here yet. Contact an admin to adjust totals until the full editor
           ships.
         </p>
+
+        <SpacesEditor
+          reservationId={reservation.id}
+          humanId={reservation.human_id}
+          currentLineNames={lines.map((l) => l.name_snapshot)}
+          catalogSpaces={catalogSpaces}
+          router={router}
+        />
       </div>
     </section>
+  );
+}
+
+function SpacesEditor({
+  reservationId,
+  humanId,
+  currentLineNames,
+  catalogSpaces,
+  router,
+}: {
+  reservationId: string;
+  humanId: string;
+  currentLineNames: string[];
+  catalogSpaces: CatalogSpace[];
+  router: ReturnType<typeof useRouter>;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  // Preselect slugs whose active-catalog name matches an existing line.
+  const nameToSlug = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of catalogSpaces) m.set(s.name.trim().toLowerCase(), s.slug);
+    return m;
+  }, [catalogSpaces]);
+  const initial = useMemo(() => {
+    const set = new Set<string>();
+    for (const n of currentLineNames) {
+      const slug = nameToSlug.get(n.trim().toLowerCase());
+      if (slug) set.add(slug);
+    }
+    return set;
+  }, [currentLineNames, nameToSlug]);
+
+  const [selected, setSelected] = useState<Set<string>>(initial);
+  useEffect(() => setSelected(initial), [initial]);
+
+  const initialSlugList = useMemo(
+    () => Array.from(initial).sort().join(","),
+    [initial]
+  );
+  const selectedSlugList = useMemo(
+    () => Array.from(selected).sort().join(","),
+    [selected]
+  );
+  const dirty = initialSlugList !== selectedSlugList;
+
+  function toggle(slug: string, checked: boolean) {
+    const next = new Set(selected);
+    if (checked) next.add(slug);
+    else next.delete(slug);
+    setSelected(next);
+  }
+
+  function handleSave() {
+    setError(null);
+    startTransition(async () => {
+      const res = await replaceReservationSpaces({
+        reservationId,
+        humanId,
+        spaceSlugs: Array.from(selected),
+      });
+      if (!res.ok) {
+        setError(res.error);
+      } else {
+        setSavedAt(Date.now());
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <div className="mt-6">
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        Change spaces
+      </h3>
+      {catalogSpaces.length === 0 ? (
+        <p className="text-sm text-neutral-500">No active spaces in catalog.</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          {catalogSpaces.map((sp) => (
+            <label
+              key={sp.slug}
+              className="flex items-center gap-2 rounded border border-neutral-200 px-2 py-1.5 text-sm hover:bg-neutral-50 cursor-pointer"
+            >
+              <input
+                type="checkbox"
+                checked={selected.has(sp.slug)}
+                onChange={(e) => toggle(sp.slug, e.target.checked)}
+              />
+              <span>{sp.name}</span>
+            </label>
+          ))}
+        </div>
+      )}
+      <div className="mt-3 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isPending || !dirty || selected.size === 0}
+          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-60"
+        >
+          {isPending ? "Saving…" : "Save spaces"}
+        </button>
+        {savedAt && !isPending && !error && (
+          <span className="text-xs text-emerald-700">Saved</span>
+        )}
+        {error && <span className="text-xs text-rose-700">{error}</span>}
+        <span className="text-xs text-neutral-500">
+          Recalculates contribution total using the current hours billed.
+        </span>
+      </div>
+    </div>
   );
 }
 

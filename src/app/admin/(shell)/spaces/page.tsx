@@ -24,7 +24,9 @@ interface ReservationRecord {
   requester_email: string;
   requester_phone: string | null;
   organization: string | null;
+  event_title: string | null;
   event_description: string | null;
+  staffing_organizer: string | null;
   load_in_at: string;
   event_start_at: string;
   event_end_at: string;
@@ -33,8 +35,14 @@ interface ReservationRecord {
   created_at: string;
 }
 
-interface LineCountRow {
+interface ReservationLineJoinRow {
   reservation_id: string;
+  name_snapshot: string | null;
+}
+
+interface CatalogSpaceRow {
+  slug: string;
+  name: string;
 }
 
 const STATUS_ORDER: Array<ReservationRecord["status"]> = [
@@ -97,9 +105,16 @@ export default async function AdminSpacesPage({
 
   const supabase = createAdminClient();
 
+  // Select an explicit list of columns instead of "*" so the row component's
+  // props are typed against the same shape we query. The table renders
+  // event_title (not the long event_description) and staffing_organizer, so
+  // both are required in this SELECT.
   let query = supabase
     .from("spaces_reservations")
-    .select("*", { count: "exact" })
+    .select(
+      "id, human_id, status, requester_name, requester_email, requester_phone, organization, event_title, event_description, staffing_organizer, load_in_at, event_start_at, event_end_at, load_out_at, contribution_total, created_at",
+      { count: "exact" }
+    )
     .order(SORT_COLUMN[sortKey], { ascending: sortDir === "asc" })
     .range(offset, offset + PAGE_SIZE - 1);
 
@@ -119,20 +134,36 @@ export default async function AdminSpacesPage({
   const { data: reservations, count: totalCount } = await query;
   const rows = (reservations ?? []) as ReservationRecord[];
 
+  // Pull each reservation's space names via the join table. We list the
+  // actual space names in the table (not just a count) and also use them
+  // to seed the inline "edit spaces" picker.
   const reservationIds = rows.map((r) => r.id);
-  const lineCountByReservation = new Map<string, number>();
+  const spaceNamesByReservation = new Map<string, string[]>();
   if (reservationIds.length > 0) {
     const { data: lines } = await supabase
       .from("spaces_reservation_lines")
-      .select("reservation_id")
+      .select("reservation_id, name_snapshot")
       .in("reservation_id", reservationIds);
-    for (const line of (lines ?? []) as LineCountRow[]) {
-      lineCountByReservation.set(
-        line.reservation_id,
-        (lineCountByReservation.get(line.reservation_id) ?? 0) + 1
-      );
+    for (const line of (lines ?? []) as ReservationLineJoinRow[]) {
+      const name = (line.name_snapshot ?? "").trim();
+      if (!name) continue;
+      const arr = spaceNamesByReservation.get(line.reservation_id) ?? [];
+      arr.push(name);
+      spaceNamesByReservation.set(line.reservation_id, arr);
     }
   }
+
+  // Active catalog for the inline space picker on each row. Cheap query;
+  // this powers a modal, not a per-row dropdown, so we can hand every row
+  // the same list.
+  const { data: catalogRowsRaw } = await supabase
+    .from("spaces")
+    .select("slug, name")
+    .eq("active", true)
+    .order("name", { ascending: true });
+  const catalogSpaces = ((catalogRowsRaw ?? []) as CatalogSpaceRow[]).map(
+    (s) => ({ slug: s.slug, name: s.name })
+  );
 
   const statusCounts = await Promise.all(
     STATUS_ORDER.map(async (s) => {
@@ -334,6 +365,7 @@ export default async function AdminSpacesPage({
                   <th className="px-3 py-2 font-medium">ID</th>
                   <th className="px-3 py-2 font-medium">Requester</th>
                   <th className="px-3 py-2 font-medium">Event</th>
+                  <th className="px-3 py-2 font-medium">Staffing</th>
                   <SortableHeader
                     label="Start"
                     columnKey="event_start"
@@ -353,7 +385,7 @@ export default async function AdminSpacesPage({
                   <th className="px-3 py-2 font-medium text-right">
                     Contribution
                   </th>
-                  <th className="px-3 py-2 font-medium text-center">Spaces</th>
+                  <th className="px-3 py-2 font-medium">Spaces</th>
                   <th className="px-3 py-2 font-medium">Status</th>
                 </tr>
               </thead>
@@ -362,7 +394,8 @@ export default async function AdminSpacesPage({
                   <SpaceReservationRow
                     key={r.id}
                     reservation={r}
-                    lineCount={lineCountByReservation.get(r.id) ?? 0}
+                    spaceNames={spaceNamesByReservation.get(r.id) ?? []}
+                    catalogSpaces={catalogSpaces}
                   />
                 ))}
               </tbody>
