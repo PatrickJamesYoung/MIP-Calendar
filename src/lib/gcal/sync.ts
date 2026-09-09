@@ -401,6 +401,16 @@ export async function pullGcalEvents(): Promise<PullResult> {
       ignored++;
       continue;
     }
+    // Cap ingestion at PULL_FUTURE_WINDOW_MS. Bootstrap requests
+    // already pass timeMin/timeMax, but delta requests (with a
+    // syncToken) ignore those params, and Google expands recurring
+    // events years into the future. Without this filter a single new
+    // no-end-date recurring event upstream can flood us with hundreds
+    // of occurrences stretching into the 2030s.
+    if (new Date(start).getTime() > now + PULL_FUTURE_WINDOW_MS) {
+      ignored++;
+      continue;
+    }
     candidates.push({
       gcal_event_id: ev.id,
       gcal_html_link: ev.htmlLink ?? null,
@@ -443,6 +453,9 @@ export async function pullGcalEvents(): Promise<PullResult> {
   mark("existing_lookup_ms", tExisting);
 
   // ---- Handle cancellations in one UPDATE ----
+  // A cancellation that arrives for an event we never ingested (because
+  // it was outside our forward window) has no matching row — harmless
+  // to ignore.
   let cancelled = 0;
   const cancelRowIds: string[] = [];
   for (const gid of cancelIds) {
