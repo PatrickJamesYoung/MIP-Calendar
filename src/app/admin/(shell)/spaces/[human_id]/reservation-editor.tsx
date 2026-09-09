@@ -53,10 +53,21 @@ interface Props {
 
 function toLocalInput(iso: string | null): string {
   if (!iso) return "";
-  const d = new Date(iso);
-  // datetime-local expects "YYYY-MM-DDTHH:MM"
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  // datetime-local expects "YYYY-MM-DDTHH:MM" as *wall-clock* text.
+  // Render in America/New_York so admins in any timezone see (and edit)
+  // the same DC-local values that are stored server-side.
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(iso));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
+  const hour = get("hour") === "24" ? "00" : get("hour");
+  return `${get("year")}-${get("month")}-${get("day")}T${hour}:${get("minute")}`;
 }
 
 export function ReservationEditor({ reservation, lines }: Props) {

@@ -12,6 +12,7 @@ import {
   pushReservationToGcal,
   unpushReservationFromGcal,
 } from "@/lib/gcal/sync";
+import { datetimeLocalToUtcIso } from "@/lib/ingest/normalize";
 
 /**
  * Server actions for the space-reservation detail page.
@@ -288,12 +289,18 @@ export async function updateReservationFields(formData: FormData) {
   for (const f of timestampFields) {
     if (formData.has(f)) {
       const raw = String(formData.get(f) ?? "").trim();
-      // datetime-local values look like "2026-09-01T14:00"; convert to ISO.
+      // datetime-local values look like "2026-09-01T14:00"; interpret them
+      // as America/New_York wall-clock and convert to UTC ISO. MIP is in DC
+      // and every event on this calendar is ET regardless of the admin's
+      // location, so we can't fall back to the server's local tz here.
       if (raw === "") {
         patch[f] = null;
       } else {
-        const d = new Date(raw);
-        if (!isNaN(d.getTime())) patch[f] = d.toISOString();
+        try {
+          patch[f] = datetimeLocalToUtcIso(raw);
+        } catch {
+          // leave unchanged on invalid input
+        }
       }
     }
   }

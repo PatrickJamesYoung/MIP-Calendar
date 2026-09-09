@@ -24,6 +24,7 @@ const DATE_FMT: Intl.DateTimeFormatOptions = {
   day: "numeric",
   hour: "numeric",
   minute: "2-digit",
+  timeZone: "America/New_York",
 };
 
 export function GearReservationRow({
