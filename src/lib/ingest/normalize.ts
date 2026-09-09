@@ -51,6 +51,55 @@ export interface NormalizedEventPayload {
 const ET_TZ = "America/New_York";
 
 /**
+ * Interpret an <input type="datetime-local"> value (e.g. "2026-09-19T10:00")
+ * as America/New_York wall-clock time and return the corresponding UTC ISO
+ * string.
+ *
+ * MIP is physically in DC and everything on this calendar is Eastern time,
+ * regardless of where the person filling out the form happens to be. Passing
+ * the raw datetime-local string to `new Date()` on a Vercel server (which
+ * runs in UTC) would silently interpret "10:00" as 10:00 UTC, i.e. 4-5 hours
+ * off from what the user typed.
+ *
+ * Accepts either the naked "YYYY-MM-DDTHH:MM" (or with seconds) form OR a
+ * full ISO string with a trailing "Z" / "+HH:MM" offset (which we honor as-is).
+ */
+export function datetimeLocalToUtcIso(input: string, tz = ET_TZ): string {
+  const s = input.trim();
+  // Full ISO with offset or Z: parse directly.
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s)) {
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) throw new Error(`Bad datetime: ${JSON.stringify(input)}`);
+    return d.toISOString();
+  }
+  // Otherwise expect "YYYY-MM-DDTHH:MM" or "YYYY-MM-DDTHH:MM:SS".
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) throw new Error(`Bad datetime: ${JSON.stringify(input)}`);
+  const [, yStr, moStr, dStr, hStr, miStr, sStr] = m;
+  const { iso } = localDateTimeToUtcIso(
+    `${parseInt(moStr, 10)}/${parseInt(dStr, 10)}/${yStr}`,
+    // Reuse the existing ET-aware helper by formatting into its expected
+    // "H:MM AM/PM" shape.
+    formatAmPm(parseInt(hStr, 10), parseInt(miStr, 10)),
+    tz
+  );
+  // Preserve seconds if the input included them by adjusting the resulting
+  // UTC instant. `localDateTimeToUtcIso` drops seconds by design.
+  if (sStr) {
+    const d = new Date(iso);
+    d.setUTCSeconds(parseInt(sStr, 10));
+    return d.toISOString();
+  }
+  return iso;
+}
+
+function formatAmPm(h: number, m: number): string {
+  const meridiem = h >= 12 ? "PM" : "AM";
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${h12}:${String(m).padStart(2, "0")} ${meridiem}`;
+}
+
+/**
  * Parse a "M/D/YYYY" + "H:MM AM/PM" pair as America/New_York wall-clock time
  * and return the corresponding UTC ISO string.
  *
