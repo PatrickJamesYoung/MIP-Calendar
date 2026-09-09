@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { sendSpaceTemplateEmail } from "@/lib/spaces/email";
+import { datetimeLocalToUtcIso } from "@/lib/ingest/normalize";
 
 const reserveSchema = z.object({
   requester_name: z.string().min(1).max(120),
@@ -70,10 +71,21 @@ export async function submitSpaceReservationAction(
   }
 
   // ---- Timing validation --------------------------------------------------
-  const loadIn = new Date(v.load_in_at);
-  const eventStart = new Date(v.event_start_at);
-  const eventEnd = new Date(v.event_end_at);
-  const loadOut = new Date(v.load_out_at);
+  // The reserve form uses <input type="datetime-local"> which submits a
+  // naked "YYYY-MM-DDTHH:MM" string with no timezone. MIP is in DC and every
+  // event on this calendar is Eastern time, regardless of the requester's
+  // location — so always interpret those wall-clock values as America/New_York
+  // instead of letting `new Date()` fall back to the server's local tz (UTC
+  // on Vercel, which shifts events 4-5 hours off from what was typed).
+  let loadIn: Date, eventStart: Date, eventEnd: Date, loadOut: Date;
+  try {
+    loadIn = new Date(datetimeLocalToUtcIso(v.load_in_at));
+    eventStart = new Date(datetimeLocalToUtcIso(v.event_start_at));
+    eventEnd = new Date(datetimeLocalToUtcIso(v.event_end_at));
+    loadOut = new Date(datetimeLocalToUtcIso(v.load_out_at));
+  } catch {
+    return { ok: false, error: "One or more times are invalid." };
+  }
   if (
     Number.isNaN(loadIn.getTime()) ||
     Number.isNaN(eventStart.getTime()) ||

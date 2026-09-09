@@ -15,6 +15,7 @@
 
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { datetimeLocalToUtcIso } from "@/lib/ingest/normalize";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,12 +34,20 @@ export async function GET(req: Request) {
     );
   }
 
-  // Match the parsing behavior of the server action (actions.ts), which
-  // just does new Date(v.load_in_at) on the raw form value. That accepts
-  // both full ISO ("...Z" / "...+00:00") and the naive
-  // "YYYY-MM-DDTHH:MM" that the datetime-local input produces.
-  const startMs = new Date(start).getTime();
-  const endMs = new Date(end).getTime();
+  // Match the parsing behavior of the server action (actions.ts): the
+  // reserve form's datetime-local inputs are wall-clock Eastern time, not
+  // UTC. Interpret them the same way here so the conflict probe queries
+  // the same instant that would eventually be written to the DB.
+  let startMs: number, endMs: number;
+  try {
+    startMs = new Date(datetimeLocalToUtcIso(start)).getTime();
+    endMs = new Date(datetimeLocalToUtcIso(end)).getTime();
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "invalid-date" },
+      { status: 400 }
+    );
+  }
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
     return NextResponse.json(
       { ok: false, error: "invalid-date" },

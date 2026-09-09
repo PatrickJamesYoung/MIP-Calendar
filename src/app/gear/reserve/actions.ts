@@ -7,6 +7,7 @@ import { verifyTurnstile } from "@/lib/turnstile";
 import { sendGearTemplateEmail } from "@/lib/gear/email";
 import { notifyOrganizersOfNewGearRequest } from "@/lib/gear/notify";
 import { parseCart } from "./cart";
+import { datetimeLocalToUtcIso } from "@/lib/ingest/normalize";
 
 const reserveSchema = z.object({
   requester_name: z.string().min(1).max(120),
@@ -68,8 +69,18 @@ export async function submitReservationAction(
   }
 
   // ---- 3. Timing validation ---------------------------------------------
-  const pickup = new Date(v.pickup_at);
-  const rtn = new Date(v.return_at);
+  // The reserve form uses <input type="datetime-local"> which submits a
+  // naked "YYYY-MM-DDTHH:MM" string. MIP is in DC and every gear pickup /
+  // return happens on Eastern time regardless of the requester's location,
+  // so always interpret those wall-clock values as America/New_York rather
+  // than the server's local tz (UTC on Vercel).
+  let pickup: Date, rtn: Date;
+  try {
+    pickup = new Date(datetimeLocalToUtcIso(v.pickup_at));
+    rtn = new Date(datetimeLocalToUtcIso(v.return_at));
+  } catch {
+    return { ok: false, error: "Invalid pickup or return date." };
+  }
   if (Number.isNaN(pickup.getTime()) || Number.isNaN(rtn.getTime())) {
     return { ok: false, error: "Invalid pickup or return date." };
   }
