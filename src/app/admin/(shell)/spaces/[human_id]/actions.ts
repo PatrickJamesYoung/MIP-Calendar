@@ -323,4 +323,193 @@ export async function updateReservationFields(formData: FormData) {
   });
 
   revalidatePath(`/admin/spaces/${humanId}`);
+  revalidatePath("/admin/spaces");
+}
+
+// ---------- PATCH SINGLE FIELD (inline edits from the admin table) ----------
+
+type PatchableField = "event_title" | "staffing_organizer";
+
+const PATCHABLE_FIELDS: readonly PatchableField[] = [
+  "event_title",
+  "staffing_organizer",
+];
+
+export async function patchReservationField(args: {
+  reservationId: string;
+  humanId: string;
+  field: PatchableField;
+  value: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = await requireAdmin();
+  if (!args.reservationId || !args.humanId) {
+    return { ok: false, error: "Missing reservation_id or human_id" };
+  }
+  if (!PATCHABLE_FIELDS.includes(args.field)) {
+    return { ok: false, error: `Field not editable: ${args.field}` };
+  }
+  const trimmed = args.value.trim();
+  const value: string | null = trimmed === "" ? null : trimmed;
+
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("spaces_reservations")
+    .update({ [args.field]: value, updated_at: new Date().toISOString() })
+    .eq("id", args.reservationId);
+  if (error) return { ok: false, error: error.message };
+
+  await logActivity({
+    supabase,
+    reservationId: args.reservationId,
+    actorEmail: admin.email,
+    action: "fields_updated",
+    detail: { fields: [args.field], source: "admin_table" },
+  });
+
+  revalidatePath(`/admin/spaces/${args.humanId}`);
+  revalidatePath("/admin/spaces");
+  return { ok: true };
+}
+
+// ---------- REPLACE SPACES ON A RESERVATION ----------
+
+/**
+ * Replaces the set of spaces attached to a reservation. Given a list of
+ * space slugs, we:
+ *   1. Look them up in the `spaces` catalog to pull current rate + name.
+ *   2. Delete all existing lines and insert fresh ones.
+ *   3. Recompute subtotal_full and contribution_total using the reservation's
+ *      current hours_billed and contribution_multiplier (both left as-is).
+ *   4. If the reservation is currently 'approved', re-push the updated event
+ *      to Google Calendar so the shared calendar reflects the new spaces.
+ *
+ * We keep hours_billed exactly as it is on the reservation to avoid drifting
+ * a manually adjusted duration. Reordering / removing / adding spaces is a
+ * common admin edit; recomputing hours from load-in/load-out would fight
+ * that.
+ */
+export async function replaceReservationSpaces(args: {
+  reservationId: string;
+  humanId: string;
+  spaceSlugs: string[];
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = await requireAdmin();
+  if (!args.reservationId || !args.humanId) {
+    return { ok: false, error: "Missing reservation_id or human_id" };
+  }
+  const slugs = Array.from(
+    new Set(
+      args.spaceSlugs
+        .map((s) => (typeof s === "string" ? s.trim() : ""))
+        .filter((s) => s.length > 0)
+    )
+  );
+  if (slugs.length === 0) {
+    return { ok: false, error: "Pick at least one space." };
+  }
+
+  const supabase = createAdminClient();
+
+  const { data: reservation, error: resErr } = await supabase
+    .from("spaces_reservations")
+    .select(
+      "id, human_id, status, hours_billed, contribution_multiplier"
+    )
+    .eq("id", args.reservationId)
+    .maybeSingle();
+  if (resErr) return { ok: false, error: resErr.message };
+  if (!reservation) return { ok: false, error: "Reservation not found" };
+
+  const { data: spaceRows, error: spacesErr } = await supabase
+    .from("spaces")
+    .select("id, slug, name, suggested_contribution_per_hour, active")
+    .in("slug", slugs);
+  if (spacesErr) return { ok: false, error: spacesErr.message };
+
+  const bySlug = new Map(
+    (spaceRows ?? []).map((sp) => [sp.slug as string, sp])
+  );
+  const resolved: {
+    space_id: string;
+    name_snapshot: string;
+    rate_per_hour: number;
+  }[] = [];
+  for (const slug of slugs) {
+    const sp = bySlug.get(slug);
+    if (!sp || !sp.active) {
+      return { ok: false, error: `Space "${slug}" is not available.` };
+    }
+    resolved.push({
+      space_id: sp.id as string,
+      name_snapshot: sp.name as string,
+      rate_per_hour: Number(sp.suggested_contribution_per_hour ?? 0),
+    });
+  }
+
+  const hoursBilled = Number(reservation.hours_billed ?? 0);
+  const multiplier = Number(reservation.contribution_multiplier ?? 1);
+  const rateSum = resolved.reduce((sum, l) => sum + l.rate_per_hour, 0);
+  const subtotalFull = Math.round(rateSum * hoursBilled * 100) / 100;
+  const contributionTotal =
+    Math.round(subtotalFull * multiplier * 100) / 100;
+
+  const { error: delErr } = await supabase
+    .from("spaces_reservation_lines")
+    .delete()
+    .eq("reservation_id", args.reservationId);
+  if (delErr) return { ok: false, error: delErr.message };
+
+  const { error: insErr } = await supabase
+    .from("spaces_reservation_lines")
+    .insert(
+      resolved.map((l) => ({
+        reservation_id: args.reservationId,
+        space_id: l.space_id,
+        name_snapshot: l.name_snapshot,
+        rate_per_hour: l.rate_per_hour,
+        hours_billed: hoursBilled,
+        line_full: Math.round(l.rate_per_hour * hoursBilled * 100) / 100,
+      }))
+    );
+  if (insErr) return { ok: false, error: insErr.message };
+
+  const { error: totalsErr } = await supabase
+    .from("spaces_reservations")
+    .update({
+      subtotal_full: subtotalFull,
+      contribution_total: contributionTotal,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", args.reservationId);
+  if (totalsErr) return { ok: false, error: totalsErr.message };
+
+  await logActivity({
+    supabase,
+    reservationId: args.reservationId,
+    actorEmail: admin.email,
+    action: "spaces_replaced",
+    detail: {
+      slugs,
+      subtotal_full: subtotalFull,
+      contribution_total: contributionTotal,
+    },
+  });
+
+  // Keep Google Calendar in sync when the reservation is already on the
+  // shared calendar. Errors here don't roll back the DB change — matches
+  // the pattern in updateReservationStatus above.
+  if (reservation.status === "approved") {
+    const pushResult = await pushReservationToGcal(args.reservationId);
+    await logActivity({
+      supabase,
+      reservationId: args.reservationId,
+      actorEmail: admin.email,
+      action: pushResult.ok ? "gcal_pushed" : "gcal_push_failed",
+      detail: pushResult as unknown as Record<string, unknown>,
+    });
+  }
+
+  revalidatePath(`/admin/spaces/${args.humanId}`);
+  revalidatePath("/admin/spaces");
+  return { ok: true };
 }

@@ -145,7 +145,7 @@ export default async function SpaceReservationDetail(props: {
   if (!reservation) return notFound();
   const r = reservation as Reservation;
 
-  const [linesRes, activityRes, emailsRes] = await Promise.all([
+  const [linesRes, activityRes, emailsRes, catalogRes] = await Promise.all([
     supabase
       .from("spaces_reservation_lines")
       .select("id,name_snapshot,rate_per_hour,hours_billed,line_full")
@@ -163,10 +163,20 @@ export default async function SpaceReservationDetail(props: {
       )
       .eq("reservation_id", r.id)
       .order("created_at", { ascending: false }),
+    // Active catalog powers the "Change spaces" picker on the editor.
+    supabase
+      .from("spaces")
+      .select("slug, name")
+      .eq("active", true)
+      .order("name", { ascending: true }),
   ]);
   const linesData = (linesRes.data ?? []) as Line[];
   const activityData = (activityRes.data ?? []) as Activity[];
   const emailsData = (emailsRes.data ?? []) as SpaceEmailMessage[];
+  const catalogSpaces = ((catalogRes.data ?? []) as {
+    slug: string;
+    name: string;
+  }[]).map((s) => ({ slug: s.slug, name: s.name }));
 
   const editorLines = linesData.map((l) => ({
     id: l.id,
@@ -233,6 +243,7 @@ export default async function SpaceReservationDetail(props: {
               staffing_organizer: r.staffing_organizer,
             }}
             lines={editorLines}
+            catalogSpaces={catalogSpaces}
           />
         </div>
 
