@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { SubmissionRow } from "./submission-row";
+import { PendingList } from "./pending-list";
 
 export const dynamic = "force-dynamic";
 
@@ -105,25 +105,11 @@ export default async function SubmissionsPage({
           </p>
         </div>
       ) : (
-        <div className="mt-6 space-y-4">
-          {submissions.map((sub) => (
-            <SubmissionRow
-              key={sub.id}
-              submission={sub}
-              overlayName={
-                overlayById.get(
-                  (sub.event_payload.overlay_calendar_id as string | null) ??
-                    ""
-                ) ?? null
-              }
-              eventTypeName={
-                eventTypeById.get(
-                  (sub.event_payload.event_type_id as string | null) ?? ""
-                ) ?? null
-              }
-            />
-          ))}
-        </div>
+        <PendingList
+          submissions={submissions}
+          overlayById={Object.fromEntries(overlayById)}
+          eventTypeById={Object.fromEntries(eventTypeById)}
+        />
       )}
     </div>
   );
