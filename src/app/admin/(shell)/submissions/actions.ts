@@ -154,7 +154,7 @@ export async function approveSubmissionAction(
 
 export async function rejectSubmissionAction(
   submissionId: string,
-  reason: string
+  reason?: string | null
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   let admin;
   try {
@@ -162,9 +162,10 @@ export async function rejectSubmissionAction(
   } catch {
     return { ok: false, error: "Not authorized" };
   }
-  if (!reason || reason.trim().length < 5) {
-    return { ok: false, error: "Please provide a reason (at least a few words)." };
-  }
+
+  // Reason is optional. If provided, we save it to admin_notes and include
+  // it in the rejection email; if not, we just reject with no explanation.
+  const cleanReason = reason?.trim() || null;
 
   const supabase = createAdminClient();
 
@@ -180,7 +181,7 @@ export async function rejectSubmissionAction(
     .from("submissions")
     .update({
       status: "rejected",
-      admin_notes: reason.trim(),
+      admin_notes: cleanReason,
       decided_by: admin.id,
       decided_at: new Date().toISOString(),
     })
@@ -192,7 +193,7 @@ export async function rejectSubmissionAction(
     action: "reject_submission",
     entity_type: "submission",
     entity_id: submissionId,
-    diff: { reason: reason.trim() },
+    diff: { reason: cleanReason },
   });
 
   const eventTitle =
@@ -201,9 +202,44 @@ export async function rejectSubmissionAction(
     submitterName: sub.submitter_name,
     submitterEmail: sub.submitter_email,
     eventTitle,
-    reason: reason.trim(),
+    reason: cleanReason,
   }).catch((e) => console.error("[reject] email failed", e));
 
   revalidatePath("/admin/submissions");
   return { ok: true };
+}
+
+/**
+ * Approve multiple submissions in one action. Runs each approval in
+ * sequence (each one creates an events row + updates the submission),
+ * collects per-id success or failure, and only revalidates the page once
+ * at the end so the UI settles cleanly.
+ */
+export async function approveSubmissionsAction(
+  submissionIds: string[]
+): Promise<{
+  approved: { id: string; slug: string }[];
+  failed: { id: string; error: string }[];
+}> {
+  const approved: { id: string; slug: string }[] = [];
+  const failed: { id: string; error: string }[] = [];
+
+  // Deduplicate
+  const uniqueIds = Array.from(new Set(submissionIds));
+
+  for (const id of uniqueIds) {
+    const r = await approveSubmissionAction(id);
+    if (r.ok) {
+      approved.push({ id, slug: r.slug });
+    } else {
+      failed.push({ id, error: r.error });
+    }
+  }
+
+  // approveSubmissionAction already revalidates on success, but call once
+  // more here so the /admin/submissions page reflects the batch result
+  // even if every item failed.
+  revalidatePath("/admin/submissions");
+
+  return { approved, failed };
 }

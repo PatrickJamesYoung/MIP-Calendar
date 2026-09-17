@@ -40,9 +40,20 @@ interface Props {
   submission: Submission;
   overlayName: string | null;
   eventTypeName: string | null;
+  /** Whether this row is selected for a bulk action (pending rows only). */
+  selected?: boolean;
+  /** Toggle handler for the row-level selection checkbox. When undefined,
+   *  the checkbox is not rendered (used for approved/rejected rows). */
+  onToggleSelect?: () => void;
 }
 
-export function SubmissionRow({ submission, overlayName, eventTypeName }: Props) {
+export function SubmissionRow({
+  submission,
+  overlayName,
+  eventTypeName,
+  selected = false,
+  onToggleSelect,
+}: Props) {
   const [expanded, setExpanded] = useState(submission.status === "pending");
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
@@ -72,10 +83,10 @@ export function SubmissionRow({ submission, overlayName, eventTypeName }: Props)
     });
   }
 
-  function handleReject() {
+  function handleReject(reasonText?: string) {
     setError(null);
     startTransition(async () => {
-      const r = await rejectSubmissionAction(submission.id, reason);
+      const r = await rejectSubmissionAction(submission.id, reasonText ?? null);
       if (r.ok) {
         setRejecting(false);
         setReason("");
@@ -92,6 +103,20 @@ export function SubmissionRow({ submission, overlayName, eventTypeName }: Props)
     >
       {/* Header row */}
       <div className="p-4 flex items-start gap-4 flex-wrap">
+        {onToggleSelect && (
+          <label
+            className="pt-1 cursor-pointer"
+            onClick={(e) => e.stopPropagation()}
+            title="Select for bulk action"
+          >
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleSelect}
+              className="w-4 h-4 accent-mip-purple cursor-pointer"
+            />
+          </label>
+        )}
         <div className="flex-1 min-w-[240px]">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-lg font-semibold text-mip-gray-900">
@@ -147,13 +172,26 @@ export function SubmissionRow({ submission, overlayName, eventTypeName }: Props)
               Approve
             </button>
             <button
-              onClick={() => setRejecting(true)}
+              onClick={() => handleReject()}
               disabled={isPending}
               className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 border border-red-300 text-red-700 hover:bg-red-50 mip-button-text disabled:opacity-50"
               style={{ borderRadius: "var(--radius-button)" }}
+              title="Reject with no reason"
             >
-              <X className="w-3.5 h-3.5" />
+              {isPending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <X className="w-3.5 h-3.5" />
+              )}
               Reject
+            </button>
+            <button
+              onClick={() => setRejecting((v) => !v)}
+              disabled={isPending}
+              className="text-xs px-2 py-1.5 text-mip-gray-600 hover:text-mip-purple underline underline-offset-4 disabled:opacity-50"
+              title="Reject with a reason sent to the submitter"
+            >
+              with note…
             </button>
           </div>
         )}
@@ -173,11 +211,12 @@ export function SubmissionRow({ submission, overlayName, eventTypeName }: Props)
         </div>
       )}
 
-      {/* Reject reason form */}
+      {/* Reject-with-reason form (optional; primary Reject is one-click) */}
       {rejecting && (
         <div className="mx-4 mb-4 p-4 bg-red-50 border border-red-200 rounded space-y-3">
           <label className="mip-input-label block">
-            Reason (will be sent to the submitter)
+            Reason (optional — will be included in the rejection email if
+            provided)
           </label>
           <textarea
             value={reason}
@@ -188,12 +227,12 @@ export function SubmissionRow({ submission, overlayName, eventTypeName }: Props)
           />
           <div className="flex items-center gap-2">
             <button
-              onClick={handleReject}
-              disabled={isPending || reason.trim().length < 5}
+              onClick={() => handleReject(reason)}
+              disabled={isPending}
               className="text-sm px-3 py-1.5 bg-red-600 text-white disabled:opacity-50 mip-button-text"
               style={{ borderRadius: "var(--radius-button)" }}
             >
-              {isPending ? "Rejecting…" : "Confirm rejection"}
+              {isPending ? "Rejecting…" : "Reject with this note"}
             </button>
             <button
               onClick={() => {

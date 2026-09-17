@@ -129,21 +129,28 @@ export async function emailSubmitterApproved(args: {
 }
 
 /**
- * Notify submitter that their event was rejected with a reason.
+ * Notify submitter that their event was rejected. `reason` is optional — if
+ * omitted or empty, the email omits the "Reason:" block entirely.
  */
 export async function emailSubmitterRejected(args: {
   submitterName: string;
   submitterEmail: string;
   eventTitle: string;
-  reason: string;
+  reason?: string | null;
 }) {
+  const reason = args.reason?.trim() || null;
   const subject = `About your submission: ${args.eventTitle}`;
   const text =
     `Hi ${args.submitterName},\n\n` +
     `Unfortunately we're not able to add "${args.eventTitle}" to the MIP Movement Calendar right now.\n\n` +
-    `Reason: ${args.reason}\n\n` +
+    (reason ? `Reason: ${reason}\n\n` : "") +
     `If you'd like to update your submission and try again, feel free to resubmit at any time.\n\n` +
     `— MIP Movement Calendar`;
+  const reasonBlock = reason
+    ? `<p style="background:#f9fafb;border-left:3px solid #39375b;padding:12px 16px;margin:16px 0;color:#111827;">${escapeHtml(
+        reason
+      ).replace(/\n/g, "<br>")}</p>`
+    : "";
   const html = wrapEmail(
     "About your submission",
     `
@@ -151,9 +158,7 @@ export async function emailSubmitterRejected(args: {
     <p>Unfortunately we're not able to add <strong>${escapeHtml(
       args.eventTitle
     )}</strong> to the MIP Movement Calendar right now.</p>
-    <p style="background:#f9fafb;border-left:3px solid #39375b;padding:12px 16px;margin:16px 0;color:#111827;">${escapeHtml(
-      args.reason
-    ).replace(/\n/g, "<br>")}</p>
+    ${reasonBlock}
     <p>If you'd like to update your submission and try again, feel free to resubmit at any time.</p>
     <p style="color:#6b7280;font-size:13px;margin-top:32px;">— MIP Movement Calendar</p>
     `
