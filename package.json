@@ -11,6 +11,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.119",
+    "@ai-sdk/openai": "^3.0.115",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.109.0",
     "@tiptap/extension-link": "^3.29.2",
@@ -22,6 +24,7 @@
     "@tiptap/react": "^3.29.2",
     "@tiptap/starter-kit": "^3.29.2",
     "@vercel/analytics": "^2.0.1",
+    "ai": "^6.0.287",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",

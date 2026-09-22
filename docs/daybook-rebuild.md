@@ -111,10 +111,26 @@ negatives (bad drafts sent) are the failure mode we are engineering out.
 
 ## What is NOT yet built
 
-- `composeWithLlm` — currently throws. This is intentional: the pipeline
-  must not silently emit an empty briefing.
-- ICS parsing in `_parse_ics` — returns `[]` until wired to `icalendar`.
-- Forth pool parsing beyond a marker check.
-- FactBase, Congress, AlertDC, SCOTUS, Mayor, DC Council fetchers.
 - `/api/daybook/mirror` for the Notion post-send step.
+- FactBase, AlertDC parsers (fetchers exist and capture raw HTML into
+  `daybook_sources.payload` during dry runs so we can design the parser
+  from real data before enabling).
+- DC Council hearings parser (stub returns ok=true with empty items so
+  compose drops the section cleanly).
 - Wiki-note update once shipped (updates `memory/knowledge/projects/dc-daybook.md`).
+
+## Composed
+
+- `composeWithLlm` in `src/lib/daybook/compose.ts` — Vercel AI SDK,
+  Claude Sonnet 4.5 primary, GPT-5 fallback, structured via Zod schema.
+  Fallback only fires on primary error, not on schema violation.
+- `_parse_ics` — full VEVENT + RRULE expansion via `icalendar` +
+  `python-dateutil`, tested with fixture ICS covering single events,
+  out-of-window events, and weekly recurrence.
+- Forth pool parser — tries `__NEXT_DATA__` first, falls back to a
+  time-prefixed text scan; returns ok=false if neither yields items.
+- Congress.gov v3 committee-meeting fetcher — list-then-detail with
+  capped fanout, normalized to `CommitteeHearing[]`.
+- SCOTUS, Mayor's Office — non-blocking ok=true empty stubs so compose
+  drops the sections rather than fails (matches the wiki: SCOTUS reuses
+  Weekly Planner archive; Mayor's Office lacks a public JSON feed).

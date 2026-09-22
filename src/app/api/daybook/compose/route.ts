@@ -154,10 +154,13 @@ function buildArchiveUrl(comp: DaybookComposition): string {
   return `https://buttondown.com/MovementInfrastructureProject/archive/${kind}-${comp.publication_date}/`;
 }
 
-async function headOk(url: string): Promise<boolean> {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function headOk(_url: string): Promise<boolean> {
   // Pre-flight: at compose time the archive doesn't exist yet. We instead
   // check the publication home resolves. Real archive-URL validation happens
   // post-send in /api/daybook/send when Buttondown returns the archive_url.
+  // `_url` is kept in the signature so a future check can validate the
+  // predicted archive URL after the send response.
   try {
     const r = await fetch("https://buttondown.com/MovementInfrastructureProject/", { method: "HEAD" });
     return r.ok;
@@ -166,23 +169,5 @@ async function headOk(url: string): Promise<boolean> {
   }
 }
 
-/**
- * LLM composition. Stubbed here — wire to Vercel AI SDK or Anthropic SDK
- * of choice. Must return JSON that validates against DaybookComposition.
- *
- * Implementation notes:
- *   - Model: Claude Sonnet 4.5 primary, GPT-5 fallback
- *   - Structured output: use tool-use or `response_format: json_schema`
- *   - Temperature: 0.2 max — this is a compilation task, not creative
- *   - Prompt lives in a version-controlled .md file so changes go via PR
- */
-async function composeWithLlm(_input: {
-  publication_date: string;
-  edition: "daybook" | "weekly";
-  sources: Record<string, unknown>;
-}): Promise<{ json: unknown; model: string; tokens_in: number; tokens_out: number }> {
-  // TODO: implement with Vercel AI SDK + Zod schema tool.
-  // For now this throws so the run fails loudly rather than silently
-  // publishing an empty briefing (the exact failure mode we're avoiding).
-  throw new Error("composeWithLlm not implemented — wire Vercel AI SDK before enabling live sends");
-}
+// composeWithLlm lives in src/lib/daybook/compose.ts (Vercel AI SDK,
+// Claude Sonnet 4.5 primary, GPT-5 fallback, structured via Zod schema).
