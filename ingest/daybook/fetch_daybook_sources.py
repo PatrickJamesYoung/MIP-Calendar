@@ -281,11 +281,17 @@ def _parse_wh_ics(text: str, *, publication_date: str, edition: str) -> list[dic
         if not description:
             continue
 
-        # Time as ET display string. Factba.se also publishes some "TBD"
-        # entries at midnight UTC; those show as 8:00 PM ET the previous
-        # day, so we window on start time above rather than any date field.
+        # Time as ET display string. Factba.se publishes some entries as
+        # "time TBD" markers by (a) prefixing SUMMARY with "TBD:" and (b)
+        # anchoring DTSTART at midnight ET (or as an all-day VALUE=DATE
+        # entry that our _to_aware_utc normalizes to midnight ET). Show
+        # those as "(time TBD)" instead of a misleading clock display, and
+        # strip the redundant "TBD:" prefix from the description.
         et_dt = dtstart.astimezone(ET)
-        time_str = et_dt.strftime("%-I:%M %p ET")
+        is_tbd = description.startswith("TBD:") and et_dt.hour == 0 and et_dt.minute == 0
+        time_str = "(time TBD)" if is_tbd else et_dt.strftime("%-I:%M %p ET")
+        if is_tbd:
+            description = description[len("TBD:"):].strip()
 
         item: dict[str, Any] = {
             # We stash the sortable ISO time on the internal record; it is
@@ -380,39 +386,98 @@ def fetch_congress() -> FetchResult:
     pub_year = date.fromisoformat(PUBLICATION_DATE).year
     congress_num = 119 + (pub_year - 2025) // 2
 
-    # Committee-meetings endpoint. We fetch both chambers separately since
-    # the endpoint takes an optional {chamber} path segment.
+    # The list endpoint filters by UPDATE date, not meeting date, so we get
+    # a superset of recently-touched meetings. Widen the update window to
+    # the past 14 days to make sure we catch meetings whose records were
+    # updated some time before the meeting itself, then fetch each detail
+    # to get the real meeting date, title, committee, and location. Filter
+    # locally to the publication window.
+    update_from = (win_start_utc - timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    update_to = (win_end_utc + timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     items: list[dict] = []
     for chamber in ("house", "senate"):
-        url = f"https://api.congress.gov/v3/committee-meeting/{congress_num}/{chamber}"
-        params = {
+        list_url = f"https://api.congress.gov/v3/committee-meeting/{congress_num}/{chamber}"
+        list_params = {
             "api_key": key,
             "format": "json",
             "limit": "100",
-            "fromDateTime": win_start_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "toDateTime": win_end_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "fromDateTime": update_from,
+            "toDateTime": update_to,
         }
-        r = requests.get(url, params=params, headers={"User-Agent": UA}, timeout=TIMEOUT)
+        r = requests.get(list_url, params=list_params, headers={"User-Agent": UA}, timeout=TIMEOUT)
         if not r.ok:
             return FetchResult(
                 ok=False,
                 http_status=r.status_code,
-                error=f"http_{r.status_code}_on_{chamber}",
+                error=f"http_{r.status_code}_on_{chamber}_list",
             )
-        data = r.json()
-        for meeting in data.get("committeeMeetings", []):
-            # committeeMeetings entries are lightweight; each has a URL to
-            # detail. Description + committee name come from detail. To keep
-            # this fetcher cheap and single-request, we emit what's in the
-            # list response and let the composer treat missing fields as
-            # nullish. api.congress.gov v3 returns date/time as ISO 8601.
-            date_str = meeting.get("date") or ""
+        meetings = r.json().get("committeeMeetings", []) or []
+
+        # Detail fetches: cap at 40 per chamber to keep runtime bounded.
+        # For the weekly edition with a busy Congress in session we might
+        # need more; observed max in recent weeks is ~30/chamber.
+        for meeting in meetings[:40]:
+            detail_url = meeting.get("url")
+            if not detail_url:
+                continue
+            # api.congress.gov detail URLs already include ?format=json but
+            # not the api_key; append.
+            joiner = "&" if "?" in detail_url else "?"
+            dr = requests.get(
+                f"{detail_url}{joiner}api_key={key}",
+                headers={"User-Agent": UA},
+                timeout=TIMEOUT,
+            )
+            if not dr.ok:
+                # Skip individual failures; log via source-key error only if
+                # every detail fails. That would produce items=[] and let
+                # the compose gate treat congress as soft-empty.
+                continue
+            detail = (dr.json() or {}).get("committeeMeeting") or {}
+            date_str = detail.get("date") or ""
+            if not date_str:
+                continue
+            # Filter to the publication window on the actual meeting date.
+            # api.congress.gov emits Z-suffixed ISO strings; use datetime
+            # .fromisoformat and normalize the trailing 'Z' to '+00:00' so
+            # any fractional-second precision is handled without a strict
+            # format string.
+            try:
+                iso = date_str[:-1] + "+00:00" if date_str.endswith("Z") else date_str
+                mt = datetime.fromisoformat(iso).astimezone(timezone.utc)
+            except (ValueError, TypeError):
+                continue
+            if not (win_start_utc <= mt < win_end_utc):
+                continue
+
+            title = (detail.get("title") or "").strip()
+            if not title:
+                continue
+
+            # `committees` is an array; take the first committee's name.
+            committees_arr = detail.get("committees") or []
+            committee_name = (
+                (committees_arr[0].get("name") if committees_arr else None)
+                or "Committee"
+            )
+
+            room = None
+            location = detail.get("location") or {}
+            if location.get("room") and location.get("building"):
+                room = f"{location['building']} {location['room']}"
+            elif location.get("building"):
+                room = location["building"]
+
             items.append({
                 "chamber": chamber,
-                "committee": meeting.get("committee", {}).get("name") or "Committee",
-                "title": (meeting.get("title") or "Committee meeting").strip(),
-                "start": date_str,
-                "url": meeting.get("url"),
+                "committee": committee_name,
+                "title": title,
+                "start": mt.astimezone(ET).isoformat(),
+                "room": room,
+                # Human-visible URL, not the API URL, for reader clicks.
+                "url": f"https://www.congress.gov/committee-meeting/{congress_num}/{chamber}/{detail.get('eventId')}"
+                if detail.get("eventId") else None,
             })
 
     items.sort(key=lambda it: it.get("start") or "")
