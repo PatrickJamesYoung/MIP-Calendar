@@ -92,8 +92,8 @@ negatives (bad drafts sent) are the failure mode we are engineering out.
 | `EMAIL_FROM` | Vercel env | From address on alerts |
 | `ADMIN_NOTIFY_EMAILS` | Vercel env | Comma-separated recipients |
 | `CONGRESS_API_KEY` | Actions secret | api.congress.gov |
-| `ANTHROPIC_API_KEY` | Vercel env | Claude Sonnet 4.5 composition |
-| `OPENAI_API_KEY` | Vercel env | GPT-5 fallback |
+| `PERPLEXITY_API_KEY` | Vercel env | Perplexity Agent API composition (JSON schema structured output) |
+| `DAYBOOK_PERPLEXITY_MODEL` | Vercel env (optional) | Model override (default `sonar-pro`) |
 
 ## Rollout plan
 
