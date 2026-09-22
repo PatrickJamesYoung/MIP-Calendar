@@ -297,3 +297,96 @@ def test_wh_parser_keeps_clock_time_when_summary_not_tbd():
     items = _parse_wh_ics(ics, publication_date="2026-09-22", edition="daybook")
     assert items[0]["time"] == "12:00 AM ET"
     assert items[0]["description"] == "Late-night event"
+
+
+# ---------------------------------------------------------------- dc_council fetcher
+
+from unittest.mock import patch, MagicMock  # noqa: E402
+from fetch_daybook_sources import fetch_dc_council  # noqa: E402
+
+
+def _mock_response(*, status_code=200, json_data=None, ok=True):
+    m = MagicMock()
+    m.status_code = status_code
+    m.ok = ok
+    m.json.return_value = json_data if json_data is not None else {}
+    return m
+
+
+def test_dc_council_parses_events_from_tec_rest():
+    """Parses TEC events, filters missing title/start, sorts by start."""
+    resp = _mock_response(json_data={
+        "events": [
+            {
+                "title": "Committee of the Whole Meeting",
+                "start_date": "2026-09-24 10:00:00",
+                "end_date": "2026-09-24 12:00:00",
+                "url": "https://dccouncil.gov/events/committee-of-the-whole/",
+                "venue": {"venue": "Wilson Building"},
+                "categories": [{"name": "Meeting"}, {"name": "Legislative"}],
+            },
+            {
+                "title": "Legislative Meeting",
+                "start_date": "2026-09-22 10:00:00",
+                "end_date": None,
+                "url": "https://dccouncil.gov/events/legislative-meeting/",
+                "venue": [],  # TEC quirk: unset venue is empty list
+                "categories": [],
+            },
+            {
+                # Missing title -> filtered out.
+                "title": "",
+                "start_date": "2026-09-23 09:00:00",
+            },
+        ]
+    })
+    with patch("fetch_daybook_sources.requests.get", return_value=resp):
+        res = fetch_dc_council()
+    assert res.ok is True
+    items = res.payload["items"]
+    assert len(items) == 2
+    # Sorted by start ascending.
+    assert items[0]["title"] == "Legislative Meeting"
+    assert items[0]["start"] == "2026-09-22 10:00:00"
+    assert "venue" not in items[0]  # empty-list venue omitted
+    assert items[1]["title"] == "Committee of the Whole Meeting"
+    assert items[1]["venue"] == "Wilson Building"
+    assert items[1]["categories"] == ["Meeting", "Legislative"]
+
+
+def test_dc_council_handles_empty_events_ok():
+    """No events for the window is a valid outcome (ok=True, items=[])."""
+    resp = _mock_response(json_data={"events": [], "total": 0})
+    with patch("fetch_daybook_sources.requests.get", return_value=resp):
+        res = fetch_dc_council()
+    assert res.ok is True
+    assert res.payload == {"items": []}
+
+
+def test_dc_council_reports_http_error():
+    resp = _mock_response(status_code=503, ok=False, json_data={})
+    with patch("fetch_daybook_sources.requests.get", return_value=resp):
+        res = fetch_dc_council()
+    assert res.ok is False
+    assert res.error == "http_503"
+    assert res.http_status == 503
+
+
+def test_dc_council_reports_network_error():
+    import requests as _req
+    with patch(
+        "fetch_daybook_sources.requests.get",
+        side_effect=_req.ConnectionError("boom"),
+    ):
+        res = fetch_dc_council()
+    assert res.ok is False
+    assert res.error.startswith("network:")
+
+
+def test_dc_council_reports_invalid_json():
+    resp = _mock_response(json_data=None)
+    resp.json.side_effect = ValueError("not json")
+    with patch("fetch_daybook_sources.requests.get", return_value=resp):
+        res = fetch_dc_council()
+    assert res.ok is False
+    assert res.error == "invalid_json"
