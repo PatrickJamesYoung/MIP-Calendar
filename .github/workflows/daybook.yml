@@ -1,0 +1,131 @@
+name: DC Daybook publication
+
+# Weekday briefing at 06:15 ET, Sunday Weekly Planner at 07:00 ET.
+# Cron is UTC-only on GitHub Actions and does NOT follow DST — the 1-hour
+# drift between EDT and EST is intentional; see docs/daybook-rebuild.md
+# and the existing ingest.yml decision.
+
+on:
+  schedule:
+    - cron: '15 10 * * 1-5'    # weekdays: 06:15 EDT / 05:15 EST
+    - cron: '0 11 * * 0'       # Sunday: 07:00 EDT / 06:00 EST
+  workflow_dispatch:
+    inputs:
+      edition:
+        description: 'Which publication'
+        type: choice
+        options: [daybook, weekly]
+        default: daybook
+      publication_date:
+        description: 'ISO date (YYYY-MM-DD); blank = today America/New_York'
+        required: false
+      dry_run:
+        description: 'Skip the send step'
+        type: boolean
+        default: false
+
+concurrency:
+  group: daybook-${{ github.event.inputs.edition || 'auto' }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine edition + date
+        id: params
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.edition }}" ]; then
+            EDITION="${{ github.event.inputs.edition }}"
+          elif [ "$(TZ=America/New_York date +%u)" = "7" ]; then
+            EDITION="weekly"
+          else
+            EDITION="daybook"
+          fi
+          if [ -n "${{ github.event.inputs.publication_date }}" ]; then
+            PUBDATE="${{ github.event.inputs.publication_date }}"
+          else
+            PUBDATE="$(TZ=America/New_York date +%F)"
+          fi
+          echo "edition=$EDITION" >> "$GITHUB_OUTPUT"
+          echo "publication_date=$PUBDATE" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r ingest/requirements.txt
+
+      - name: Start run
+        id: start
+        env:
+          API: ${{ secrets.DAYBOOK_API_BASE }}
+          TOKEN: ${{ secrets.DAYBOOK_BEARER_TOKEN }}
+          EDITION: ${{ steps.params.outputs.edition }}
+          PUBDATE: ${{ steps.params.outputs.publication_date }}
+        run: |
+          set -euo pipefail
+          RESP=$(curl -sS -w "\n%{http_code}" -X POST "$API/api/daybook/run" \
+            -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            -d "{\"publication_date\":\"$PUBDATE\",\"edition\":\"$EDITION\",\"github_run_id\":\"${{ github.run_id }}\",\"github_run_url\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}")
+          BODY=$(echo "$RESP" | head -n -1)
+          CODE=$(echo "$RESP" | tail -n 1)
+          echo "start_code=$CODE"
+          echo "$BODY"
+          if [ "$CODE" = "409" ]; then
+            echo "::warning::Publication already sent for $PUBDATE $EDITION — aborting"
+            exit 0
+          fi
+          if [ "$CODE" != "201" ]; then
+            echo "::error::Failed to start run (HTTP $CODE)"
+            exit 1
+          fi
+          RUN_ID=$(echo "$BODY" | python -c 'import sys,json;print(json.load(sys.stdin)["run_id"])')
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch sources
+        if: steps.start.outputs.run_id != ''
+        env:
+          RUN_ID: ${{ steps.start.outputs.run_id }}
+          INGEST_API_BASE: ${{ secrets.DAYBOOK_API_BASE }}
+          DAYBOOK_BEARER_TOKEN: ${{ secrets.DAYBOOK_BEARER_TOKEN }}
+          EDITION: ${{ steps.params.outputs.edition }}
+          PUBLICATION_DATE: ${{ steps.params.outputs.publication_date }}
+          CONGRESS_API_KEY: ${{ secrets.CONGRESS_API_KEY }}
+        run: python ingest/daybook/fetch_daybook_sources.py
+
+      - name: Compose + validate
+        if: steps.start.outputs.run_id != ''
+        env:
+          API: ${{ secrets.DAYBOOK_API_BASE }}
+          TOKEN: ${{ secrets.DAYBOOK_BEARER_TOKEN }}
+          RUN_ID: ${{ steps.start.outputs.run_id }}
+        run: |
+          curl -sS -f -X POST "$API/api/daybook/compose" \
+            -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            -d "{\"run_id\":\"$RUN_ID\"}"
+
+      - name: Send
+        if: steps.start.outputs.run_id != '' && inputs.dry_run != true
+        env:
+          API: ${{ secrets.DAYBOOK_API_BASE }}
+          TOKEN: ${{ secrets.DAYBOOK_BEARER_TOKEN }}
+          RUN_ID: ${{ steps.start.outputs.run_id }}
+        run: |
+          curl -sS -f -X POST "$API/api/daybook/send" \
+            -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            -d "{\"run_id\":\"$RUN_ID\"}"
+
+      - name: Alert on failure
+        if: failure() && steps.start.outputs.run_id != ''
+        env:
+          API: ${{ secrets.DAYBOOK_API_BASE }}
+          TOKEN: ${{ secrets.DAYBOOK_BEARER_TOKEN }}
+          RUN_ID: ${{ steps.start.outputs.run_id }}
+        run: |
+          curl -sS -X POST "$API/api/daybook/alert" \
+            -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            -d "{\"run_id\":\"$RUN_ID\",\"reason\":\"workflow_failed\",\"run_url\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" || true
