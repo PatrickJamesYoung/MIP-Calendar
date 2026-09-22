@@ -248,3 +248,52 @@ def test_wh_parser_sorts_am_before_pm_chronologically():
         "Noon UTC event",
         "Late night ET event",
     ]
+
+
+def test_wh_parser_labels_tbd_events_and_strips_prefix():
+    """Factba.se stashes 'time TBD' items at midnight ET with a 'TBD:'
+    SUMMARY prefix. Show those as '(time TBD)' and strip the prefix so
+    readers don't see them mislabeled as '12:00 AM ET' or '4:00 AM ET'.
+
+    Midnight ET on 2026-09-22 = 04:00 UTC on 2026-09-22 (EDT).
+    """
+    ics = _ics(
+        _vevent(
+            DTSTART="20260922T040000Z",
+            SUMMARY="TBD: The President departs the White House",
+        )
+    )
+    items = _parse_wh_ics(ics, publication_date="2026-09-22", edition="daybook")
+    assert len(items) == 1
+    assert items[0]["time"] == "(time TBD)"
+    assert items[0]["description"] == "The President departs the White House"
+
+
+def test_wh_parser_labels_all_day_tbd_events():
+    """An all-day VALUE=DATE entry with a TBD: SUMMARY should also render
+    as (time TBD). _to_aware_utc treats DATE-only values as midnight ET."""
+    ics = _ics(
+        _vevent(
+            **{"DTSTART;VALUE=DATE": "20260922"},
+            SUMMARY="TBD: The President departs on travel",
+        )
+    )
+    items = _parse_wh_ics(ics, publication_date="2026-09-22", edition="daybook")
+    assert len(items) == 1
+    assert items[0]["time"] == "(time TBD)"
+    assert items[0]["description"] == "The President departs on travel"
+
+
+def test_wh_parser_keeps_clock_time_when_summary_not_tbd():
+    """Midnight-ET events WITHOUT a 'TBD:' prefix keep their clock display.
+    Rare in practice, but we should not steal the clock display for events
+    that happen to be at midnight for legitimate reasons."""
+    ics = _ics(
+        _vevent(
+            DTSTART="20260922T040000Z",  # midnight EDT
+            SUMMARY="Late-night event",
+        )
+    )
+    items = _parse_wh_ics(ics, publication_date="2026-09-22", edition="daybook")
+    assert items[0]["time"] == "12:00 AM ET"
+    assert items[0]["description"] == "Late-night event"
