@@ -152,3 +152,99 @@ def test_non_http_urls_are_dropped():
     )
     items = _parse_ics(ics, publication_date="2026-09-22", edition="daybook")
     assert "url" not in items[0]
+
+
+# --- WH ICS parser (Factba.se schedule) tests -------------------------------
+
+
+from fetch_daybook_sources import _parse_wh_ics  # noqa: E402
+
+
+def test_wh_parser_extracts_time_description_and_pool_status():
+    ics = _ics(
+        _vevent(
+            DTSTART="20260922T140000Z",  # 10:00 AM EDT
+            SUMMARY="The President delivers Remarks",
+            DESCRIPTION="Pre-Credentialed Media",
+        )
+    )
+    items = _parse_wh_ics(ics, publication_date="2026-09-22", edition="daybook")
+    assert len(items) == 1
+    assert items[0]["time"] == "10:00 AM ET"
+    assert items[0]["description"] == "The President delivers Remarks"
+    assert items[0]["pool_status"] == "Pre-Credentialed Media"
+
+
+def test_wh_parser_omits_pool_status_when_description_absent():
+    ics = _ics(
+        _vevent(
+            DTSTART="20260922T140000Z",
+            SUMMARY="The President arrives at United Nations",
+            LOCATION="United Nations Headquarters, New York",
+        )
+    )
+    items = _parse_wh_ics(ics, publication_date="2026-09-22", edition="daybook")
+    assert len(items) == 1
+    assert "pool_status" not in items[0]
+
+
+def test_wh_parser_filters_out_of_window_events():
+    ics = _ics(
+        _vevent(
+            DTSTART="20260921T140000Z",  # yesterday
+            SUMMARY="Should be excluded",
+        ),
+        _vevent(
+            DTSTART="20260922T140000Z",
+            SUMMARY="Today's event",
+        ),
+    )
+    items = _parse_wh_ics(ics, publication_date="2026-09-22", edition="daybook")
+    assert len(items) == 1
+    assert items[0]["description"] == "Today's event"
+
+
+def test_wh_parser_sorts_by_time():
+    ics = _ics(
+        _vevent(DTSTART="20260922T230000Z", SUMMARY="Evening remarks"),  # 7:00 PM ET
+        _vevent(DTSTART="20260922T140000Z", SUMMARY="Morning remarks"),  # 10:00 AM ET
+    )
+    items = _parse_wh_ics(ics, publication_date="2026-09-22", edition="daybook")
+    assert [i["description"] for i in items] == ["Morning remarks", "Evening remarks"]
+
+
+def test_wh_parser_recognizes_all_pool_phrases():
+    phrases = [
+        "Out-of-Town Travel Pool",
+        "In-Town Pool",
+        "Open Press",
+        "Closed Press",
+    ]
+    for i, phrase in enumerate(phrases):
+        # Space events out across the day to avoid identical timestamps.
+        hour = 14 + i
+        ics = _ics(
+            _vevent(
+                DTSTART=f"20260922T{hour:02d}0000Z",
+                SUMMARY=f"Event {i}",
+                DESCRIPTION=phrase,
+            )
+        )
+        items = _parse_wh_ics(ics, publication_date="2026-09-22", edition="daybook")
+        assert items[0]["pool_status"] == phrase, phrase
+
+
+def test_wh_parser_sorts_am_before_pm_chronologically():
+    """Regression: '10:40 AM' must sort before '12:00 AM' even though the
+    strings compare wrong lexically."""
+    ics = _ics(
+        _vevent(DTSTART="20260922T160000Z", SUMMARY="Noon UTC event"),   # 12:00 PM ET
+        _vevent(DTSTART="20260922T144000Z", SUMMARY="10:40 AM ET event"),  # 10:40 AM ET
+        _vevent(DTSTART="20260923T035959Z", SUMMARY="Late night ET event"),  # 11:59 PM ET
+    )
+    items = _parse_wh_ics(ics, publication_date="2026-09-22", edition="daybook")
+    assert [i["description"] for i in items] == [
+        "10:40 AM ET event",
+        "Noon UTC event",
+        "Late night ET event",
+    ]
