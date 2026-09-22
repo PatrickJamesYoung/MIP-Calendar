@@ -12,14 +12,18 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { checkBearer } from "@/lib/daybook/auth";
 import { SOURCE_KEYS } from "@/lib/daybook/types";
 
+// Nullable AND optional: the Python fetcher always sends every key even
+// when the value is unknown (it sends null). Zod's .optional() alone
+// accepts undefined only, not null, so we must .nullable().optional() to
+// let JSON nulls through.
 const Body = z.object({
   run_id: z.string().uuid(),
   source_key: z.enum(SOURCE_KEYS),
   ok: z.boolean(),
-  http_status: z.number().int().optional(),
-  bytes: z.number().int().optional(),
-  payload: z.unknown().optional(),
-  error: z.string().optional(),
+  http_status: z.number().int().nullable().optional(),
+  bytes: z.number().int().nullable().optional(),
+  payload: z.unknown().nullable().optional(),
+  error: z.string().nullable().optional(),
 });
 
 export async function POST(req: Request) {
