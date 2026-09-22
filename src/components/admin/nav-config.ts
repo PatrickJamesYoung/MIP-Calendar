@@ -78,6 +78,10 @@ export const NAV: NavEntry[] = [
     },
   },
   {
+    kind: "link",
+    leaf: { href: "/admin/daybook", label: "Daybook" },
+  },
+  {
     kind: "group",
     group: {
       label: "Admin",
