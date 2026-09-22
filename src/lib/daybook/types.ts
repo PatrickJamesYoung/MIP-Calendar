@@ -87,11 +87,15 @@ export const DaybookComposition = z.object({
   // Weather is intentionally NOT in the schema for the Notion mirror path.
   // The email renderer reads a separate optional field only when edition
   // === 'daybook' AND the email destination is set — never in Notion.
+  // Nullish (accepts null AND undefined) matches PR #61's pattern: models
+  // targeting a strict JSON schema emit null for absent objects, not
+  // omitted keys. The renderer already checks truthiness before use, so
+  // accepting null is safe.
   weather_email_only: z.object({
     summary: z.string(),
-    high_f: z.number().int().optional(),
-    low_f: z.number().int().optional(),
-  }).optional(),
+    high_f: z.number().int().nullish(),
+    low_f: z.number().int().nullish(),
+  }).nullish(),
 });
 export type DaybookComposition = z.infer<typeof DaybookComposition>;
 
