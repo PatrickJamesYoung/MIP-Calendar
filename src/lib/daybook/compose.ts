@@ -163,7 +163,17 @@ export async function composeWithLlm(input: ComposeInput): Promise<ComposeOutput
   if (!apiKey) {
     throw new Error("compose: PERPLEXITY_API_KEY is not set — cannot compose");
   }
-  const modelName = process.env.DAYBOOK_PERPLEXITY_MODEL ?? "sonar-pro";
+  // The Agent API model list uses provider/slug ids and does NOT include
+  // the legacy Sonar chat-completions ids: `sonar-pro`, `sonar-reasoning-pro`,
+  // and `sonar-deep-research` are being retired on 2026-09-27 with no
+  // Agent-API equivalent (only `perplexity/sonar` migrates).
+  // Default is `perplexity/sonar` — keeps this integration first-party
+  // Perplexity, matches the user's explicit "use Perplexity API" intent,
+  // and Sonar handles structured JSON output well for compilation tasks
+  // like this one. Override via DAYBOOK_PERPLEXITY_MODEL if you want an
+  // Anthropic/OpenAI/xAI model through the Agent API's unified billing.
+  // See: https://docs.perplexity.ai/docs/agent-api/models
+  const modelName = process.env.DAYBOOK_PERPLEXITY_MODEL ?? "perplexity/sonar";
 
   const systemPrompt = await loadPrompt();
   const userMessage = buildUserMessage(input);
