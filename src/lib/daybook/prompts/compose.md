@@ -19,8 +19,8 @@ You are the composer for MIP's DC Daybook (weekday) or DC Weekly Planner (Sunday
 ## Inputs
 
 You will receive a JSON blob under `sources` with keys:
-`mip_calendar`, `forth`, `factbase`, `congress`, `alert_dc`, `scotus`,
-`mayor`, `dc_council`. Missing or failed sources appear as `null`.
+`mip_calendar`, `forth`, `congress`, `alert_dc`, `scotus`, `mayor`,
+`dc_council`. Missing or failed sources appear as `null`.
 
 ## Style
 

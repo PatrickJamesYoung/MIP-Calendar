@@ -103,7 +103,6 @@ export type DaybookComposition = z.infer<typeof DaybookComposition>;
 export const SOURCE_KEYS = [
   "mip_calendar",
   "forth",
-  "factbase",
   "congress",
   "alert_dc",
   "scotus",
@@ -115,5 +114,11 @@ export type SourceKey = (typeof SOURCE_KEYS)[number];
 /** Which sources are hard-required. If any hard source fails, the run aborts. */
 export const HARD_REQUIRED_SOURCES: SourceKey[] = ["mip_calendar"];
 
-/** At least one of these must succeed. */
-export const AT_LEAST_ONE_OF: SourceKey[][] = [["forth", "factbase"]];
+/** At least one of these must succeed.
+ *
+ * Formerly `[["forth", "factbase"]]` when the FactBase HTML scraper served
+ * as a fallback for forth.news. Now the WH source is the Rollcall/Factba.se
+ * Google Calendar ICS read directly by the `forth` fetcher, and the old
+ * `fetch_factbase_wh` scraper has been removed, so the WH gate is just
+ * `forth` on its own; empty output is tolerated by the compose gate. */
+export const AT_LEAST_ONE_OF: SourceKey[][] = [];
