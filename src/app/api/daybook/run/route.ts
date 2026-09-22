@@ -51,6 +51,27 @@ export async function POST(req: Request) {
     );
   }
 
+  // Zombie sweep: mark any in-progress rows for the same (date, edition) as
+  // failed so retries don't accumulate stuck rows and post-terminal-status
+  // reporting stays clean. We keep them (rather than delete) so the audit
+  // trail is intact. `daybook_sources` FK on-delete-cascade means we'd lose
+  // fetch logs on delete, which we don't want for post-mortems.
+  const { error: zombieErr } = await supabase
+    .from("daybook_runs")
+    .update({
+      status: "failed",
+      error: "orphaned:superseded_by_new_run",
+      finished_at: new Date().toISOString(),
+    })
+    .eq("publication_date", publication_date)
+    .eq("edition", edition)
+    .in("status", ["started", "fetched", "composed", "rendered"]);
+  if (zombieErr) {
+    // Non-fatal: log and continue. The new insert may fail below if a real
+    // constraint conflict exists; that's the right place to surface it.
+    console.warn("[daybook/run] zombie sweep failed:", zombieErr.message);
+  }
+
   const { data, error } = await supabase
     .from("daybook_runs")
     .insert({
