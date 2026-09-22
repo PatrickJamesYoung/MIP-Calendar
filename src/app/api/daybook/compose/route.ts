@@ -76,14 +76,26 @@ export async function POST(req: Request) {
 
   await supabase.from("daybook_runs").update({ status: "fetched" }).eq("id", run_id);
 
-  // LLM composition. Uses the AI SDK — provider swappable via env.
-  const composition = await composeWithLlm({
-    publication_date: run.publication_date,
-    edition: run.edition,
-    sources: Object.fromEntries(
-      Array.from(bySource.entries()).map(([k, v]) => [k, v.ok ? v.payload : null]),
-    ),
-  });
+  // LLM composition. Wrapped in try/catch so any provider error (network,
+  // rate-limit, auth, model outage, malformed output) is surfaced to the
+  // client AND stored on the run row instead of bubbling up as a raw 500
+  // with no DB record of what went wrong. Prior behavior left runs stuck
+  // at status='fetched' with no error, which broke the retry path and
+  // hid the actual failure.
+  let composition: Awaited<ReturnType<typeof composeWithLlm>>;
+  try {
+    composition = await composeWithLlm({
+      publication_date: run.publication_date,
+      edition: run.edition,
+      sources: Object.fromEntries(
+        Array.from(bySource.entries()).map(([k, v]) => [k, v.ok ? v.payload : null]),
+      ),
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await markFailed(supabase, run_id, `compose_llm_failed:${msg.slice(0, 400)}`);
+    return NextResponse.json({ error: "compose_llm_failed", detail: msg.slice(0, 400) }, { status: 500 });
+  }
 
   const parsedComp = DaybookComposition.safeParse(composition.json);
   if (!parsedComp.success) {
@@ -109,7 +121,7 @@ export async function POST(req: Request) {
     movementCalendarSourceCount: sourceCount,
   });
 
-  const { error: draftErr } = await supabase.from("daybook_drafts").upsert(
+  const draftUpsert = await supabase.from("daybook_drafts").upsert(
     {
       run_id,
       composed_json: parsedComp.data,
@@ -122,8 +134,9 @@ export async function POST(req: Request) {
     },
     { onConflict: "run_id" },
   );
-  if (draftErr) {
-    return NextResponse.json({ error: "db_error", detail: draftErr.message }, { status: 500 });
+  if (draftUpsert.error) {
+    await markFailed(supabase, run_id, `draft_upsert_failed:${draftUpsert.error.message.slice(0, 400)}`);
+    return NextResponse.json({ error: "db_error", detail: draftUpsert.error.message }, { status: 500 });
   }
 
   if (!report.passed) {
