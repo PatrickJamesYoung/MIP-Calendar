@@ -344,22 +344,6 @@ def fetch_forth_wh_pool() -> FetchResult:
         )
 
 
-def fetch_factbase_wh() -> FetchResult:
-    """Legacy FactBase fallback probe.
-
-    Now that `fetch_forth_wh_pool` reads the Factba.se ICS directly, this
-    fetcher is redundant. Kept as a lightweight reachability probe so the
-    compose gate's `at_least_one_of([forth, factbase])` remains satisfiable
-    if forth ever fails transiently. Emits an empty items list; the compose
-    gate treats forth's real items as the substantive source.
-    """
-    return FetchResult(
-        ok=True,
-        http_status=None,
-        payload={"items": [], "note": "deprecated_reachability_probe"},
-    )
-
-
 def fetch_congress() -> FetchResult:
     """Committee hearings for the target day from api.congress.gov.
 
@@ -505,7 +489,6 @@ def fetch_dc_council() -> FetchResult:
 FETCHERS: dict[str, Callable[[], FetchResult]] = {
     "mip_calendar": fetch_mip_calendar,
     "forth": fetch_forth_wh_pool,
-    "factbase": fetch_factbase_wh,
     "congress": fetch_congress,
     "alert_dc": fetch_alert_dc,
     "scotus": fetch_scotus,
