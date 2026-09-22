@@ -35,9 +35,14 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 import requests
+from icalendar import Calendar as ICalendar
+
+ET = ZoneInfo("America/New_York")
 
 RUN_ID = os.environ["RUN_ID"]
 API_BASE = os.environ["INGEST_API_BASE"].rstrip("/")
@@ -115,7 +120,9 @@ def fetch_mip_calendar() -> FetchResult:
     Uses urllib directly to defeat any HTTP caching layer that could serve
     a stale ICS. This is a deliberate carry-over from the earlier Daybook.
     """
-    url = "https://mip-calendar.vercel.app/calendar.ics?overlay=movement"
+    # Use the canonical app domain, not the auto-Vercel alias, which has
+    # been unreliable from GHA runners.
+    url = "https://app.movementinfrastructureproject.org/calendar.ics?overlay=movement"
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Cache-Control": "no-cache"})
     with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
         text = resp.read().decode("utf-8", errors="replace")
@@ -123,16 +130,103 @@ def fetch_mip_calendar() -> FetchResult:
         return FetchResult(ok=True, http_status=resp.status, payload={"items": items, "raw_bytes": len(text)})
 
 
-def _parse_ics(_text: str, *, publication_date: str, edition: str) -> list[dict]:
-    """Extract VEVENTs falling on the target day (or week for 'weekly').
+def _window_et(publication_date: str, edition: str) -> tuple[datetime, datetime]:
+    """Return the inclusive ET window matching the publication.
 
-    Kept intentionally simple in the scaffold — replace with `ics.py` or
-    `icalendar` and full RRULE expansion before enabling live sends. The TS
-    compose route trusts this shape; keep it stable.
+    daybook -> single day (00:00-24:00 America/New_York on publication_date)
+    weekly  -> that day plus the following 6 days (Sun -> Sat inclusive)
+
+    Returns aware UTC datetimes so comparisons with parsed ICS values are
+    straightforward and DST-safe.
     """
-    # TODO: implement full VEVENT parsing with RRULE expansion.
-    _ = _text, publication_date, edition
-    return []
+    pub = date.fromisoformat(publication_date)
+    span = 7 if edition == "weekly" else 1
+    start_et = datetime.combine(pub, dtime.min, tzinfo=ET)
+    end_et = datetime.combine(pub + timedelta(days=span), dtime.min, tzinfo=ET)
+    return start_et.astimezone(timezone.utc), end_et.astimezone(timezone.utc)
+
+
+def _to_aware_utc(value: Any) -> datetime | None:
+    """Normalize an icalendar DTSTART/DTEND value to a UTC-aware datetime.
+
+    Accepts:
+      - datetime with tzinfo (returned in UTC)
+      - naive datetime (assumed to already be UTC per the source's `Z` suffix)
+      - date (treated as midnight ET, e.g. all-day events shown in ET)
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    if isinstance(value, date):
+        return datetime.combine(value, dtime.min, tzinfo=ET).astimezone(timezone.utc)
+    return None
+
+
+def _parse_ics(text: str, *, publication_date: str, edition: str) -> list[dict]:
+    """Extract VEVENTs whose start falls inside the ET window for this pub.
+
+    The current MIP Calendar export contains no RRULE entries, so we don't
+    need dateutil recurrence expansion. If RRULE support is added upstream,
+    swap the loop for `recurring_ical_events` before enabling. For now we
+    fail loudly if we ever see one, so we can't ship a silent regression.
+
+    Output shape matches CalendarItem in src/lib/daybook/types.ts:
+        { title, start, end?, location?, url?, organizer? }
+    Times are emitted in ISO 8601 America/New_York so the composer and
+    renderer can use them directly.
+    """
+    win_start, win_end = _window_et(publication_date, edition)
+    cal = ICalendar.from_ical(text)
+
+    items: list[dict] = []
+    for component in cal.walk("VEVENT"):
+        if component.get("RRULE"):
+            raise NotImplementedError(
+                "RRULE encountered in ICS but recurrence expansion is not wired. "
+                "Add `recurring_ical_events` or dateutil.rrule before continuing."
+            )
+        dtstart = _to_aware_utc(component.get("DTSTART").dt if component.get("DTSTART") else None)
+        if dtstart is None or not (win_start <= dtstart < win_end):
+            continue
+        dtend = _to_aware_utc(component.get("DTEND").dt if component.get("DTEND") else None)
+
+        title = str(component.get("SUMMARY") or "").strip()
+        if not title:
+            continue
+
+        item: dict[str, Any] = {
+            "title": title,
+            "start": dtstart.astimezone(ET).isoformat(),
+        }
+        if dtend is not None:
+            item["end"] = dtend.astimezone(ET).isoformat()
+
+        loc = component.get("LOCATION")
+        if loc:
+            loc_str = str(loc).strip()
+            if loc_str:
+                item["location"] = loc_str
+
+        url = component.get("URL")
+        if url:
+            url_str = str(url).strip()
+            if url_str.startswith(("http://", "https://")):
+                item["url"] = url_str
+
+        organizer = component.get("ORGANIZER")
+        if organizer:
+            org_str = str(organizer).replace("MAILTO:", "").replace("mailto:", "").strip()
+            if org_str:
+                item["organizer"] = org_str
+
+        items.append(item)
+
+    # Chronological order so the composer doesn't have to sort.
+    items.sort(key=lambda it: it["start"])
+    return items
 
 
 def fetch_forth_wh_pool() -> FetchResult:
@@ -149,8 +243,23 @@ def fetch_forth_wh_pool() -> FetchResult:
 
 
 def fetch_factbase_wh() -> FetchResult:
-    """FactBase — fallback only. See wiki: Forth is preferred."""
-    return FetchResult(ok=False, error="not_implemented_yet")
+    """FactBase — fallback only. See wiki: Forth is preferred.
+
+    Scaffold behavior mirrors Forth's: fetch the landing page, confirm it
+    responds, return ok=true with no parsed items. This lets the compose
+    gate's `at_least_one_of([forth, factbase])` clear whenever Forth is
+    rate-limited (a common occurrence from GitHub Actions IPs). A real
+    parser lands in a follow-up PR.
+    """
+    url = "https://factba.se/topic/calendar"
+    r = requests.get(url, headers={"User-Agent": UA}, timeout=TIMEOUT)
+    if not r.ok:
+        return FetchResult(ok=False, http_status=r.status_code, error=f"http_{r.status_code}")
+    return FetchResult(
+        ok=True,
+        http_status=r.status_code,
+        payload={"items": [], "note": "scaffold_reachability_only"},
+    )
 
 
 def fetch_congress() -> FetchResult:
