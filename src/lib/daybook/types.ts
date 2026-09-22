@@ -12,13 +12,19 @@ import { z } from "zod";
 export type DaybookEdition = "daybook" | "weekly";
 
 /** A single item on the movement calendar. Sourced from mip-calendar ICS. */
+// Inner optional fields use .nullish() (accepts null AND undefined) so
+// the JSON Schema generated from these Zod types describes them as
+// nullable. Models targeting a strict JSON schema emit `null` rather than
+// omitting keys, and a plain .optional() rejects null. All fields marked
+// nullish below are also declared nullable in the DB, so the semantics
+// hold end-to-end.
 export const CalendarItem = z.object({
   title: z.string().min(1),
   start: z.string(),            // ISO 8601 in America/New_York
-  end: z.string().optional(),
-  location: z.string().optional(),
-  url: z.string().url().optional(),
-  organizer: z.string().optional(),
+  end: z.string().nullish(),
+  location: z.string().nullish(),
+  url: z.string().url().nullish(),
+  organizer: z.string().nullish(),
 });
 export type CalendarItem = z.infer<typeof CalendarItem>;
 
@@ -28,8 +34,8 @@ export const CommitteeHearing = z.object({
   committee: z.string().min(1),
   title: z.string().min(1),
   start: z.string(),
-  room: z.string().optional(),
-  url: z.string().url().optional(),
+  room: z.string().nullish(),
+  url: z.string().url().nullish(),
 });
 export type CommitteeHearing = z.infer<typeof CommitteeHearing>;
 
@@ -37,7 +43,7 @@ export type CommitteeHearing = z.infer<typeof CommitteeHearing>;
 export const WhiteHouseItem = z.object({
   time: z.string(),             // free-form ("10:15 AM ET") — pool text is inconsistent
   description: z.string().min(1),
-  pool_status: z.string().optional(),
+  pool_status: z.string().nullish(),
 });
 export type WhiteHouseItem = z.infer<typeof WhiteHouseItem>;
 
@@ -45,8 +51,8 @@ export type WhiteHouseItem = z.infer<typeof WhiteHouseItem>;
 export const DcGovItem = z.object({
   agency: z.string().min(1),
   title: z.string().min(1),
-  start: z.string().optional(),
-  url: z.string().url().optional(),
+  start: z.string().nullish(),
+  url: z.string().url().nullish(),
 });
 export type DcGovItem = z.infer<typeof DcGovItem>;
 
@@ -54,7 +60,7 @@ export type DcGovItem = z.infer<typeof DcGovItem>;
 export const AlertDcItem = z.object({
   headline: z.string().min(1),
   issued_at: z.string(),
-  url: z.string().url().optional(),
+  url: z.string().url().nullish(),
 });
 export type AlertDcItem = z.infer<typeof AlertDcItem>;
 
@@ -67,14 +73,14 @@ export const DaybookComposition = z.object({
   edition: z.enum(["daybook", "weekly"]),
   publication_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   subject: z.string().min(1),
-  intro: z.string().optional(),
+  intro: z.string().nullish(),
   movement_calendar: z.array(CalendarItem),
   white_house: z.array(WhiteHouseItem),
   congress: z.array(CommitteeHearing),
   scotus: z.array(z.object({
     title: z.string(),
     summary: z.string(),
-    url: z.string().url().optional(),
+    url: z.string().url().nullish(),
   })),
   dc_gov: z.array(DcGovItem),
   alert_dc: z.array(AlertDcItem),
