@@ -469,19 +469,106 @@ def fetch_congress() -> FetchResult:
 
 
 def fetch_alert_dc() -> FetchResult:
-    return FetchResult(ok=False, error="not_implemented_yet")
+    """Stub: no public feed. AlertDC (hsema.dc.gov) is delivered via
+    Everbridge Community subscriptions. There is no public REST/RSS/iCal
+    feed for programmatic ingestion. Would require either an authenticated
+    Everbridge integration or scraping the human-readable
+    https://hsema.dc.gov/alerts page.
+    """
+    return FetchResult(ok=False, error="no_public_feed_available")
 
 
 def fetch_scotus() -> FetchResult:
-    return FetchResult(ok=False, error="not_implemented_yet")
+    """Stub: canonical source is PDF. supremecourt.gov publishes argument
+    calendars only as PDFs at /oral_arguments/calendarsandlists.aspx.
+    Third-party feeds (scotusblog, firstthingsfirstblog) exist but are
+    unofficial. Implementation deferred pending a decision on which
+    source to trust.
+    """
+    return FetchResult(ok=False, error="pdf_only_upstream")
 
 
 def fetch_mayor() -> FetchResult:
-    return FetchResult(ok=False, error="not_implemented_yet")
+    """Stub: HTML-only, requires scraper. mayor.dc.gov posts one \"Public
+    Calendar for [date]\" HTML release per day (e.g. /release/mayor-bowser
+    -public-calendar-tuesday-september-22-2026). No structured feed.
+    Implementation deferred; would need URL-pattern derivation from the
+    publication date + HTML extraction of time/event/location triples.
+    """
+    return FetchResult(ok=False, error="html_scraper_needed")
 
 
 def fetch_dc_council() -> FetchResult:
-    return FetchResult(ok=False, error="not_implemented_yet")
+    """DC Council meetings/hearings for the publication window.
+
+    dccouncil.gov runs The Events Calendar (Tribe) WordPress plugin, which
+    exposes a public REST API at `/wp-json/tribe/events/v1/events`. The
+    plugin's ical export path returns 200 with an empty body (likely bot
+    filtering), so we use the JSON REST endpoint instead.
+
+    Returns items shaped as:
+        { title, start, end?, url?, venue?, categories? }
+
+    Empty result (no events posted for the window) is a valid outcome and
+    returns ok=True with items=[]. The compose gate tolerates empty
+    sections and omits the DC Council section entirely.
+    """
+    win_start_utc, win_end_utc = _window_et(PUBLICATION_DATE, EDITION)
+    # TEC accepts YYYY-MM-DD strings in the site's timezone; we pass the
+    # ET calendar dates the composer already uses. Subtract one second from
+    # the end so an exclusive-end window renders as an inclusive-end date.
+    start_local = win_start_utc.astimezone(ET).strftime("%Y-%m-%d")
+    end_local = (win_end_utc - timedelta(seconds=1)).astimezone(ET).strftime("%Y-%m-%d")
+
+    url = "https://dccouncil.gov/wp-json/tribe/events/v1/events"
+    params = {
+        "per_page": "50",
+        "start_date": start_local,
+        "end_date": end_local,
+        "status": "publish",
+    }
+    try:
+        r = requests.get(
+            url,
+            params=params,
+            headers={"User-Agent": UA, "Accept": "application/json"},
+            timeout=TIMEOUT,
+        )
+    except requests.RequestException as e:
+        return FetchResult(ok=False, error=f"network:{type(e).__name__}")
+
+    if not r.ok:
+        return FetchResult(ok=False, http_status=r.status_code, error=f"http_{r.status_code}")
+
+    try:
+        events = (r.json() or {}).get("events", []) or []
+    except ValueError:
+        return FetchResult(ok=False, http_status=r.status_code, error="invalid_json")
+
+    items: list[dict] = []
+    for ev in events:
+        title = (ev.get("title") or "").strip()
+        start = ev.get("start_date") or ""
+        if not (title and start):
+            continue
+        venue = ev.get("venue") or {}
+        # `venue` can be an empty list [] when unset; TEC quirk.
+        venue_name = venue.get("venue") if isinstance(venue, dict) else None
+        item: dict[str, Any] = {
+            "title": title,
+            "start": start,
+            "end": ev.get("end_date"),
+            "url": ev.get("url"),
+        }
+        if venue_name:
+            item["venue"] = venue_name
+        cats = ev.get("categories") or []
+        if cats:
+            item["categories"] = [c.get("name") for c in cats if isinstance(c, dict) and c.get("name")]
+        items.append(item)
+
+    items.sort(key=lambda it: it.get("start") or "")
+    return FetchResult(ok=True, http_status=r.status_code, payload={"items": items})
 
 
 # ---------------------------------------------------------------- main
