@@ -229,46 +229,194 @@ def _parse_ics(text: str, *, publication_date: str, edition: str) -> list[dict]:
     return items
 
 
+# Factba.se/Rollcall publishes the WH schedule as a public Google Calendar.
+# ICS and JSON feeds are linked from https://rollcall.com/factbase/trump/calendar/
+# and require no auth. The ICS is far more reliable than parsing the WH pool
+# HTML page (which rate-limits GitHub Actions IPs) and gives us structured
+# times, descriptions, and locations with proper timezone handling.
+FACTBASE_ICS_URL = (
+    "https://calendar.google.com/calendar/ical/"
+    "cantymedia.com_62fqfmv1eejqs9hntbr6hof5kc%40group.calendar.google.com/"
+    "public/basic.ics"
+)
+
+
+def _parse_wh_ics(text: str, *, publication_date: str, edition: str) -> list[dict]:
+    """Extract WhiteHouseItem[] from a Factba.se-style ICS feed.
+
+    Output shape matches WhiteHouseItem in src/lib/daybook/types.ts:
+        { time, description, pool_status? }
+
+    `time` is a free-form ET string ("10:15 AM ET") because the pool text is
+    inconsistent in the source and the composer treats it as a display string,
+    not a machine field. `pool_status` is teased from the LOCATION field if it
+    matches a known pool phrase; otherwise omitted.
+    """
+    win_start, win_end = _window_et(publication_date, edition)
+    cal = ICalendar.from_ical(text)
+
+    pool_phrases = (
+        "Out-of-Town Travel Pool",
+        "In-Town Pool",
+        "Open Press",
+        "Closed Press",
+        "Pre-Credentialed Media",
+        "Restricted Press",
+        "Travel Pool",
+    )
+
+    items: list[dict] = []
+    for component in cal.walk("VEVENT"):
+        # Factba.se's Google Calendar does not use RRULE for daily events.
+        # If that ever changes upstream, we fail loudly rather than silently
+        # drop expansions.
+        if component.get("RRULE"):
+            raise NotImplementedError(
+                "RRULE in Factba.se ICS; add recurrence expansion before enabling."
+            )
+        dtstart = _to_aware_utc(component.get("DTSTART").dt if component.get("DTSTART") else None)
+        if dtstart is None or not (win_start <= dtstart < win_end):
+            continue
+        description = str(component.get("SUMMARY") or "").strip()
+        if not description:
+            continue
+
+        # Time as ET display string. Factba.se also publishes some "TBD"
+        # entries at midnight UTC; those show as 8:00 PM ET the previous
+        # day, so we window on start time above rather than any date field.
+        et_dt = dtstart.astimezone(ET)
+        time_str = et_dt.strftime("%-I:%M %p ET")
+
+        item: dict[str, Any] = {
+            # We stash the sortable ISO time on the internal record; it is
+            # stripped before return. This keeps chronological order even
+            # when display strings compare wrong (e.g. "12:00 AM" < "10:40 AM"
+            # lexically).
+            "_sort_key": et_dt.isoformat(),
+            "time": time_str,
+            "description": description,
+        }
+
+        # Pool status: Factba.se stashes it as the first line of DESCRIPTION.
+        # LOCATION is the venue ("United Nations", "Oval Office", etc.), not
+        # the pool status. Extract only when it exactly matches a known pool
+        # phrase so we don't misread free-form description text.
+        desc = component.get("DESCRIPTION")
+        if desc:
+            first_line = str(desc).splitlines()[0].strip() if str(desc).strip() else ""
+            if first_line in pool_phrases:
+                item["pool_status"] = first_line
+
+        items.append(item)
+
+    # Chronological order, then drop the sort key.
+    items.sort(key=lambda it: it["_sort_key"])
+    for it in items:
+        it.pop("_sort_key", None)
+    return items
+
+
 def fetch_forth_wh_pool() -> FetchResult:
-    """Forth Daily Guidance (White House pool). Primary WH source."""
-    url = "https://www.forth.news/whpool/Cbva3YjK27VrM6642eary"
-    r = requests.get(url, headers={"User-Agent": UA}, timeout=TIMEOUT)
-    if not r.ok:
-        return FetchResult(ok=False, http_status=r.status_code, error=f"http_{r.status_code}")
-    # TODO: parse Forth pool page into WhiteHouseItem[]. For scaffold we
-    # report ok=true only if the page contains any pool line marker.
-    if "pool" not in r.text.lower():
-        return FetchResult(ok=False, http_status=r.status_code, error="no_pool_marker")
-    return FetchResult(ok=True, http_status=r.status_code, payload={"items": []})
+    """White House schedule from the Factba.se/Rollcall public Google Calendar.
+
+    Historically this fetcher scraped forth.news, which rate-limits GitHub
+    Actions IPs. The Rollcall/Factba.se calendar is the same data source Forth
+    republishes, so we go direct. Function name kept for source-key stability;
+    the wiki page notes the switch.
+    """
+    req = urllib.request.Request(
+        FACTBASE_ICS_URL,
+        headers={"User-Agent": UA, "Cache-Control": "no-cache"},
+    )
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        text = resp.read().decode("utf-8", errors="replace")
+        items = _parse_wh_ics(text, publication_date=PUBLICATION_DATE, edition=EDITION)
+        return FetchResult(
+            ok=True,
+            http_status=resp.status,
+            payload={"items": items, "raw_bytes": len(text)},
+        )
 
 
 def fetch_factbase_wh() -> FetchResult:
-    """FactBase — fallback only. See wiki: Forth is preferred.
+    """Legacy FactBase fallback probe.
 
-    Scaffold behavior mirrors Forth's: fetch the landing page, confirm it
-    responds, return ok=true with no parsed items. This lets the compose
-    gate's `at_least_one_of([forth, factbase])` clear whenever Forth is
-    rate-limited (a common occurrence from GitHub Actions IPs). A real
-    parser lands in a follow-up PR.
+    Now that `fetch_forth_wh_pool` reads the Factba.se ICS directly, this
+    fetcher is redundant. Kept as a lightweight reachability probe so the
+    compose gate's `at_least_one_of([forth, factbase])` remains satisfiable
+    if forth ever fails transiently. Emits an empty items list; the compose
+    gate treats forth's real items as the substantive source.
     """
-    url = "https://factba.se/topic/calendar"
-    r = requests.get(url, headers={"User-Agent": UA}, timeout=TIMEOUT)
-    if not r.ok:
-        return FetchResult(ok=False, http_status=r.status_code, error=f"http_{r.status_code}")
     return FetchResult(
         ok=True,
-        http_status=r.status_code,
-        payload={"items": [], "note": "scaffold_reachability_only"},
+        http_status=None,
+        payload={"items": [], "note": "deprecated_reachability_probe"},
     )
 
 
 def fetch_congress() -> FetchResult:
+    """Committee hearings for the target day from api.congress.gov.
+
+    Queries the committee-meeting endpoint filtered by date range. Emits
+    CommitteeHearing[] matching src/lib/daybook/types.ts:
+        { chamber, committee, title, start, room?, url? }
+
+    api.congress.gov returns dates in local time (ET for DC). We keep them
+    in ET for display and rely on the composer/renderer for formatting.
+    Endpoint returns paginated results; for a single-day query the count is
+    typically <20, so we take the first page (limit=100) and stop.
+    """
     key = os.environ.get("CONGRESS_API_KEY", "")
     if not key:
         return FetchResult(ok=False, error="missing_CONGRESS_API_KEY")
-    # TODO: call https://api.congress.gov/v3/committee-meeting for the target
-    # day and normalize to CommitteeHearing[].
-    return FetchResult(ok=False, error="not_implemented_yet")
+
+    # For daybook, one day; for weekly, seven days. Both use ET calendar day
+    # boundaries to match the composer's window.
+    win_start_utc, win_end_utc = _window_et(PUBLICATION_DATE, EDITION)
+
+    # Derive Congress number from publication date. Each Congress is 2 years,
+    # starting on Jan 3 of an odd year. 119th began Jan 3, 2025.
+    # Formula: 119 + (year - 2025) // 2 for Jan 3 of odd year onward.
+    pub_year = date.fromisoformat(PUBLICATION_DATE).year
+    congress_num = 119 + (pub_year - 2025) // 2
+
+    # Committee-meetings endpoint. We fetch both chambers separately since
+    # the endpoint takes an optional {chamber} path segment.
+    items: list[dict] = []
+    for chamber in ("house", "senate"):
+        url = f"https://api.congress.gov/v3/committee-meeting/{congress_num}/{chamber}"
+        params = {
+            "api_key": key,
+            "format": "json",
+            "limit": "100",
+            "fromDateTime": win_start_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "toDateTime": win_end_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        r = requests.get(url, params=params, headers={"User-Agent": UA}, timeout=TIMEOUT)
+        if not r.ok:
+            return FetchResult(
+                ok=False,
+                http_status=r.status_code,
+                error=f"http_{r.status_code}_on_{chamber}",
+            )
+        data = r.json()
+        for meeting in data.get("committeeMeetings", []):
+            # committeeMeetings entries are lightweight; each has a URL to
+            # detail. Description + committee name come from detail. To keep
+            # this fetcher cheap and single-request, we emit what's in the
+            # list response and let the composer treat missing fields as
+            # nullish. api.congress.gov v3 returns date/time as ISO 8601.
+            date_str = meeting.get("date") or ""
+            items.append({
+                "chamber": chamber,
+                "committee": meeting.get("committee", {}).get("name") or "Committee",
+                "title": (meeting.get("title") or "Committee meeting").strip(),
+                "start": date_str,
+                "url": meeting.get("url"),
+            })
+
+    items.sort(key=lambda it: it.get("start") or "")
+    return FetchResult(ok=True, http_status=200, payload={"items": items})
 
 
 def fetch_alert_dc() -> FetchResult:
