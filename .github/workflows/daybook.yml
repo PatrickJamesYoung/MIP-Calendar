@@ -104,9 +104,18 @@ jobs:
           TOKEN: ${{ secrets.DAYBOOK_BEARER_TOKEN }}
           RUN_ID: ${{ steps.start.outputs.run_id }}
         run: |
-          curl -sS -f -X POST "$API/api/daybook/compose" \
+          set -euo pipefail
+          RESP=$(curl -sS -w "\n%{http_code}" -X POST "$API/api/daybook/compose" \
             -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-            -d "{\"run_id\":\"$RUN_ID\"}"
+            -d "{\"run_id\":\"$RUN_ID\"}")
+          BODY=$(echo "$RESP" | head -n -1)
+          CODE=$(echo "$RESP" | tail -n 1)
+          echo "compose_code=$CODE"
+          echo "$BODY"
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Compose failed (HTTP $CODE)"
+            exit 1
+          fi
 
       - name: Send
         if: steps.start.outputs.run_id != '' && inputs.dry_run != true
