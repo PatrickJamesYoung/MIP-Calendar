@@ -22,6 +22,7 @@ import {
 } from "@/lib/daybook/types";
 import { renderEmailHtml } from "@/lib/daybook/render";
 import { validateDraft } from "@/lib/daybook/validation";
+import { composeWithLlm } from "@/lib/daybook/compose";
 
 const Body = z.object({ run_id: z.string().uuid() });
 
@@ -154,7 +155,7 @@ function buildArchiveUrl(comp: DaybookComposition): string {
   return `https://buttondown.com/MovementInfrastructureProject/archive/${kind}-${comp.publication_date}/`;
 }
 
-async function headOk(url: string): Promise<boolean> {
+async function headOk(_url: string): Promise<boolean> {
   // Pre-flight: at compose time the archive doesn't exist yet. We instead
   // check the publication home resolves. Real archive-URL validation happens
   // post-send in /api/daybook/send when Buttondown returns the archive_url.
@@ -166,23 +167,7 @@ async function headOk(url: string): Promise<boolean> {
   }
 }
 
-/**
- * LLM composition. Stubbed here — wire to Vercel AI SDK or Anthropic SDK
- * of choice. Must return JSON that validates against DaybookComposition.
- *
- * Implementation notes:
- *   - Model: Claude Sonnet 4.5 primary, GPT-5 fallback
- *   - Structured output: use tool-use or `response_format: json_schema`
- *   - Temperature: 0.2 max — this is a compilation task, not creative
- *   - Prompt lives in a version-controlled .md file so changes go via PR
- */
-async function composeWithLlm(_input: {
-  publication_date: string;
-  edition: "daybook" | "weekly";
-  sources: Record<string, unknown>;
-}): Promise<{ json: unknown; model: string; tokens_in: number; tokens_out: number }> {
-  // TODO: implement with Vercel AI SDK + Zod schema tool.
-  // For now this throws so the run fails loudly rather than silently
-  // publishing an empty briefing (the exact failure mode we're avoiding).
-  throw new Error("composeWithLlm not implemented — wire Vercel AI SDK before enabling live sends");
-}
+// composeWithLlm lives in src/lib/daybook/compose.ts and calls the
+// Perplexity Agent API with a JSON-schema `response_format` so the model
+// output matches DaybookComposition. Temperature and provider config are
+// in that module.
