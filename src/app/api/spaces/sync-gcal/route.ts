@@ -11,7 +11,9 @@
  */
 
 import { NextResponse } from "next/server";
-import { pullGcalEvents } from "@/lib/gcal/sync";
+import { pullGcalEvents, type PullResult } from "@/lib/gcal/sync";
+import { sendAdminEmail } from "@/lib/email";
+import { escapeHtml } from "@/lib/email/resend-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +27,7 @@ export const maxDuration = 300;
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
+    await alertFailure("cron-secret-not-configured", 500);
     return NextResponse.json(
       { ok: false, error: "cron-secret-not-configured" },
       { status: 500 }
@@ -39,9 +42,48 @@ export async function GET(req: Request) {
   }
 
   const started = Date.now();
-  const result = await pullGcalEvents();
+  let result: PullResult;
+  try {
+    result = await pullGcalEvents();
+  } catch (e) {
+    result = { ok: false, error: `threw: ${(e as Error).message}` };
+  }
   const elapsed_ms = Date.now() - started;
 
   const status = result.ok ? 200 : 500;
+  // Email admins on failure only. Successful runs (including no-op
+  // days) stay silent.
+  if (!result.ok) {
+    await alertFailure(result.error ?? "unknown-error", status, elapsed_ms);
+  }
   return NextResponse.json({ ...result, elapsed_ms }, { status });
+}
+
+const ADMIN_URL = "https://app.movementinfrastructureproject.org/admin/spaces";
+
+/**
+ * Failure email to ADMIN_NOTIFY_EMAILS. Never throws; an email problem
+ * must not mask the sync failure in the HTTP response or Vercel logs.
+ */
+async function alertFailure(error: string, status: number, elapsedMs?: number) {
+  try {
+    const when = new Date().toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+    const elapsed = elapsedMs != null ? ` after ${Math.round(elapsedMs / 1000)}s` : "";
+    const res = await sendAdminEmail({
+      subject: "[MIP Calendar] Google Calendar sync failed",
+      bodyHtml: `
+        <p>The daily Google Calendar sync failed at ${escapeHtml(when)} ET${escapeHtml(elapsed)} (HTTP ${status}).</p>
+        <p style="background:#f9fafb;border-left:3px solid #39375b;padding:12px 16px;margin:16px 0;color:#111827;"><code>${escapeHtml(error)}</code></p>
+        <p>The next run is tomorrow at 7:00 UTC. The sync is safe to re-run, so it will catch up once the cause is fixed.</p>
+        <p><a href="${ADMIN_URL}">Open Spaces admin</a></p>`,
+      bodyText: `The daily Google Calendar sync failed at ${when} ET${elapsed} (HTTP ${status}).\n\nError: ${error}\n\nNext run: tomorrow 7:00 UTC.\n${ADMIN_URL}`,
+    });
+    if (!res.ok) console.error("[sync-gcal] failure alert not sent:", res.error);
+  } catch (e) {
+    console.error("[sync-gcal] failure alert threw:", e);
+  }
 }
