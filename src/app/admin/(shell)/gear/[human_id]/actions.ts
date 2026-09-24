@@ -8,6 +8,7 @@ import {
   type GearEmailTemplateKey,
 } from "@/lib/gear/email";
 import { dispatchGearEmail } from "@/lib/gear/messages";
+import { completeGearRequestTask } from "@/lib/gear/notion-tasks";
 
 /**
  * Server actions for the reservation detail page.
@@ -120,6 +121,10 @@ export async function updateReservationStatus(args: {
     detail: { status: args.status },
   });
 
+  if (args.status === "approved") {
+    await completeGearRequestTask(args.reservationId, "confirm");
+  }
+
   revalidatePath(`/admin/gear/${args.humanId}`);
   revalidatePath("/admin/gear");
   return { ok: true };
@@ -206,6 +211,10 @@ export async function sendPreparedEmail(args: {
       edited: subject.length + body.length > 0,
     },
   });
+
+  if (result.ok && args.templateKey === "followup") {
+    await completeGearRequestTask(args.reservationId, "followup");
+  }
 
   revalidatePath(`/admin/gear/${args.humanId}`);
   if (!result.ok) return { ok: false, error: result.error ?? "Send failed" };
