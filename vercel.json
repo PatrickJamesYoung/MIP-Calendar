@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/spaces/sync-gcal", "schedule": "0 7 * * *" }
+  ]
+}
