@@ -1,5 +1,6 @@
 "use server";
 
+import { createGearRequestTasks } from "@/lib/gear/notion-tasks";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -197,7 +198,7 @@ export async function submitReservationAction(
       contribution_total: contributionTotal,
       acknowledged_tentative: true,
     })
-    .select("id, human_id")
+    .select("id, human_id, created_at")
     .single();
 
   if (insertErr || !resInsert) {
@@ -227,6 +228,17 @@ export async function submitReservationAction(
       error: `Couldn't save your items: ${linesErr.message}`,
     };
   }
+
+  // ---- 7b. Create Notion tasks (best-effort, never blocks) --------------
+  await createGearRequestTasks({
+    id: resInsert.id,
+    human_id: resInsert.human_id,
+    requester_name: v.requester_name,
+    organization: v.organization?.trim() || null,
+    pickup_at: pickup.toISOString(),
+    return_at: rtn.toISOString(),
+    created_at: resInsert.created_at,
+  });
 
   // ---- 8. Send acknowledgement + notify organizers (best-effort) --------
   const ackReservation = {
