@@ -16,6 +16,7 @@ from difflib import SequenceMatcher
 # Only the sources loop in main() references these.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from parse_metro_dc_dsa import parse_metro_dc_dsa as _parse_metro_dc_dsa_ext  # noqa: E402
+from parse_the_51st import parse_the_51st as _parse_the_51st_ext  # noqa: E402
 
 # RUN_DIR resolution order:
 #   1. $RUN_DIR env var (preferred: caller sets it)
@@ -630,6 +631,7 @@ def main():
         (parse_rhizome, 'Rhizome DC'),
         (parse_festival_center, 'Festival Center'),
         (lambda: _parse_metro_dc_dsa_ext(RUN_DIR), 'Metro DC DSA'),
+        (lambda: _parse_the_51st_ext(RUN_DIR, TODAY), 'The 51st'),
     ]:
         try:
             evs = fn()

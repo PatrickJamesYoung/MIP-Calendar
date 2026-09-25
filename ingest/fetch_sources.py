@@ -9,6 +9,7 @@ Outputs (one file per source, or per-org for Mobilize):
     raw_mobilize_{ORG_ID}.json   (6 files)
     raw_rhizome.html             (best-effort; JS-rendered, often 0)
     raw_festival_center.ics
+    raw_the_51st.xml             (Ghost RSS for the Civics Roundup tag)
 
 Also generates:
     existing_rows.json           (fetched from /api/ingest/dedup-state)
@@ -148,6 +149,17 @@ def fetch_festival_center() -> None:
         "uulp2pem0sbujuv1lm7nq774jkkqahb5%40import.calendar.google.com/public/basic.ics",
         RUN_DIR / "raw_festival_center.ics",
         kind="ics",
+    )
+
+
+def fetch_the_51st() -> None:
+    """The 51st's weekly Civics Roundup. The Ghost tag feed carries the
+    full post HTML in <content:encoded>, so one request covers every
+    recent roundup; ingest/parse_the_51st.py does the rest."""
+    _fetch(
+        "https://51st.news/tag/civics-roundup/rss/",
+        RUN_DIR / "raw_the_51st.xml",
+        kind="xml",
     )
 
 
@@ -319,6 +331,7 @@ def main() -> None:
     fetch_rhizome()
     fetch_festival_center()
     fetch_metro_dc_dsa()
+    fetch_the_51st()
     print("[fetch] Dedup + Trumba compat:")
     fetch_existing_rows()
     write_trumba_from_db()

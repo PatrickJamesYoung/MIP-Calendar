@@ -89,6 +89,37 @@ def run() -> None:
             "title": "Community Potluck",
             "date": "8/20/2026",
         },
+        # 7. The 51st vs the originating org in the same run — org wins.
+        {
+            "source": "Free DC",
+            "title": "Chocolate City Free DC orientation",
+            "date": "9/23/2026",
+        },
+        {
+            "source": "The 51st",
+            "title": "Chocolate City Free DC orientation",
+            "date": "9/23/2026",
+        },
+        # 8. The 51st listing already on the calendar — dropped outright.
+        {
+            "source": "The 51st",
+            "title": "Ward 7 freedom dreaming session",
+            "date": "9/24/2026",
+            "movement_calendar": "Posted",
+        },
+        # 9. Non-aggregator 'Posted' rows are left alone (unchanged behavior).
+        {
+            "source": "Mobilize",
+            "title": "Tenant Know Your Rights",
+            "date": "9/24/2026",
+            "movement_calendar": "Posted",
+        },
+        # 10. Fresh The 51st listing — kept.
+        {
+            "source": "The 51st",
+            "title": "D.C. Community Organizing Festival",
+            "date": "9/26/2026",
+        },
     ]
 
     (tmp / "new_events.json").write_text(json.dumps(events))
@@ -141,6 +172,20 @@ def run() -> None:
 
     # #6 — Unique event kept.
     assert any(e["title"] == "Community Potluck" for e in out)
+
+    # #7 — Free DC beats The 51st.
+    assert ("Free DC", "Chocolate City Free DC orientation") in kept_titles
+    assert ("The 51st", "Chocolate City Free DC orientation") not in kept_titles
+
+    # #8 — already-posted aggregator row dropped, and reported.
+    assert not any("Ward 7 freedom" in e["title"] for e in out)
+    assert any(r["match_type"] == "already_posted" for r in report["entries"])
+
+    # #9 — non-aggregator Posted row untouched.
+    assert ("Mobilize", "Tenant Know Your Rights") in kept_titles
+
+    # #10 — fresh The 51st row kept.
+    assert ("The 51st", "D.C. Community Organizing Festival") in kept_titles
 
     print("\n✅ ALL ASSERTIONS PASSED")
 
