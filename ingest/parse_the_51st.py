@@ -27,13 +27,18 @@ from __future__ import annotations
 
 import html as _html
 import re
+import warnings
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from bs4 import BeautifulSoup, NavigableString, Tag
+from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning, NavigableString, Tag
+
+# Short <br>-split fragments (e.g. "⏰ 7 p.m.") trip bs4's "looks like a
+# filename" heuristic; it's noise for us.
+warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
 SOURCE = "The 51st"
 
