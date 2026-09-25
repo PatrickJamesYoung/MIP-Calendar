@@ -114,6 +114,7 @@ export const GET = withIngestAuth(async () => {
     "PopVille",
     "Busboys & Poets",
     "Metro DC DSA",
+    "The 51st",
   ];
 
   const pushForAllSources = (title: string, date: string, time: string) => {

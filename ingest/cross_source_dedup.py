@@ -57,7 +57,17 @@ SOURCE_PRIORITY: dict[str, int] = {
     "PopVille": 5,
     "Busboys & Poets": 6,
     "Grassroots DC": 7,
+    # Pure roundup/newsletter — every listing originates elsewhere, so it
+    # loses any tie against the originating org's own feed.
+    "The 51st": 8,
 }
+
+# Aggregator-only sources whose events are dropped outright when runner.py
+# already matched them to something on the calendar or in the review queue
+# (movement_calendar == 'Posted'). Without this, e.g. a Free DC orientation
+# already published from the Free DC feed would re-enter the review queue
+# via The 51st's roundup the following week.
+DROP_IF_POSTED_SOURCES: set[str] = {"The 51st"}
 
 
 def _normalize_title(t: str) -> str:
@@ -114,6 +124,21 @@ def dedupe(events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dic
     over the survivors keyed on date (±1 day).
     """
     report: list[dict[str, Any]] = []
+
+    # ---- pass 0: aggregator events already on the calendar ----------------
+    fresh: list[dict[str, Any]] = []
+    for ev in events:
+        if ev.get("source") in DROP_IF_POSTED_SOURCES and ev.get("movement_calendar") == "Posted":
+            report.append(
+                {
+                    "match_type": "already_posted",
+                    "kept": {"source": "calendar", "title": ev.get("title"), "date": ev.get("date")},
+                    "dropped": {"source": ev["source"], "title": ev.get("title"), "date": ev.get("date")},
+                }
+            )
+            continue
+        fresh.append(ev)
+    events = fresh
 
     # ---- pass 1: exact bucketing on (norm_title, date) ---------------------
     buckets: dict[tuple[str, str], dict[str, Any]] = {}
