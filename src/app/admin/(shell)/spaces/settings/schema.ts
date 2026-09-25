@@ -104,6 +104,12 @@ export const KNOWN_SPACE_SETTINGS: SpaceSettingSpec[] = [
     help: "One equipment option per line. These appear as checkboxes when the art & production room is in a request.",
   },
   {
+    key: "organizer_emails",
+    label: "Organizer notification emails",
+    type: "string_list",
+    help: "One address per line. Receives an email for every new space request. If empty, falls back to ADMIN_NOTIFY_EMAILS.",
+  },
+  {
     key: "gcal_calendar_id",
     label: "Google Calendar — target calendar ID",
     type: "string",

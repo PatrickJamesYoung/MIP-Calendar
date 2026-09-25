@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { sendSpaceTemplateEmail } from "@/lib/spaces/email";
+import { notifyOrganizersOfNewSpaceRequest } from "@/lib/spaces/notify";
 import { datetimeLocalToUtcIso } from "@/lib/ingest/normalize";
 
 const reserveSchema = z.object({
@@ -302,6 +303,22 @@ export async function submitSpaceReservationAction(
     });
   } catch (e) {
     console.warn("[spaces-reserve] submission_ack failed:", (e as Error).message);
+  }
+
+  // ---- Organizer notification (best-effort) -----------------------------
+  try {
+    const notify = await notifyOrganizersOfNewSpaceRequest({
+      reservation: {
+        ...ackReservation,
+        event_title: v.event_title.trim(),
+      },
+      lines: ackLines,
+      orgTier: tier,
+      equipment: equipmentRequested,
+    });
+    if (!notify.ok) console.warn("[spaces-reserve] organizer notify failed:", notify.error);
+  } catch (e) {
+    console.warn("[spaces-reserve] organizer notify threw:", (e as Error).message);
   }
 
   return { ok: true, humanId: resInsert.human_id };
