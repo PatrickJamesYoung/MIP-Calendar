@@ -114,6 +114,9 @@ async function postToButtondown(args: { subject: string; html: string }): Promis
       headers: {
         "Content-Type": "application/json",
         Authorization: `Token ${key}`,
+        // Buttondown requires this acknowledgement before an API key may
+        // create emails with status 'about_to_send' (i.e. real sends).
+        "X-Buttondown-Live-Dangerously": "true",
       },
       body: JSON.stringify({
         subject: args.subject,
