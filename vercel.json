@@ -1,6 +1,25 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    { "path": "/api/spaces/sync-gcal", "schedule": "0 7 * * *" }
+    {
+      "path": "/api/spaces/sync-gcal",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/daybook/cron",
+      "schedule": "15 10 * * 1-5"
+    },
+    {
+      "path": "/api/daybook/cron",
+      "schedule": "15 11 * * 1-5"
+    },
+    {
+      "path": "/api/daybook/cron",
+      "schedule": "0 11 * * 0"
+    },
+    {
+      "path": "/api/daybook/cron",
+      "schedule": "0 12 * * 0"
+    }
   ]
 }
