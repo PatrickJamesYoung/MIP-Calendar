@@ -42,7 +42,17 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
-  const slot = slotFor(new Date());
+  // ?test=1 dispatches a forced dry run for the current ET date so the
+  // token and dispatch path can be verified outside publication hours.
+  // Always dry: trigger=manual + dry_run=true, so it can never send.
+  const isTest = new URL(req.url).searchParams.get("test") === "1";
+  const now = new Date();
+  const slot: Slot | null = isTest
+    ? {
+        edition: "daybook",
+        publication_date: new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now),
+      }
+    : slotFor(now);
   if (!slot) {
     // The other half of a DST pair. Expected, silent.
     return NextResponse.json({ ok: true, skipped: "not_publication_hour_et" });
@@ -70,7 +80,7 @@ export async function GET(req: Request) {
           inputs: {
             edition: slot.edition,
             publication_date: slot.publication_date,
-            trigger: "cron",
+            ...(isTest ? { trigger: "manual", dry_run: "true" } : { trigger: "cron" }),
           },
         }),
       }
@@ -86,7 +96,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: detail }, { status: 502 });
   }
 
-  return NextResponse.json({ ok: true, dispatched: slot });
+  return NextResponse.json({ ok: true, dispatched: slot, test: isTest });
 }
 
 async function alertFailure(error: string, slot?: Slot) {
