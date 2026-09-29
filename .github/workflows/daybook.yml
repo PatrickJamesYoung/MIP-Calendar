@@ -1,14 +1,12 @@
 name: DC Daybook publication
 
 # Weekday briefing at 06:15 ET, Sunday Weekly Planner at 07:00 ET.
-# Cron is UTC-only on GitHub Actions and does NOT follow DST — the 1-hour
-# drift between EDT and EST is intentional; see docs/daybook-rebuild.md
-# and the existing ingest.yml decision.
+# Triggered by Vercel Cron via /api/daybook/cron, which handles DST.
 
 on:
-  schedule:
-    - cron: '15 10 * * 1-5'    # weekdays: 06:15 EDT / 05:15 EST
-    - cron: '0 11 * * 0'       # Sunday: 07:00 EDT / 06:00 EST
+  # Scheduling lives in Vercel Cron (vercel.json -> /api/daybook/cron),
+  # which dispatches this workflow with trigger=cron. GitHub's own
+  # scheduler was running these 5-8 hours late.
   workflow_dispatch:
     inputs:
       edition:
@@ -23,6 +21,11 @@ on:
         description: 'Skip the send step'
         type: boolean
         default: false
+      trigger:
+        description: 'manual, or cron when dispatched by Vercel Cron'
+        type: choice
+        options: [manual, cron]
+        default: manual
 
 concurrency:
   group: daybook-${{ github.event.inputs.edition || 'auto' }}
@@ -118,12 +121,12 @@ jobs:
           fi
 
       - name: Send
-        # Scheduled runs only send when the repo variable DAYBOOK_LIVE_SEND is 'true'.
+        # Cron-dispatched runs only send when repo variable DAYBOOK_LIVE_SEND is 'true'.
         # Manual runs send unless dry_run is checked.
         if: >-
           steps.start.outputs.run_id != '' &&
-          ((github.event_name == 'workflow_dispatch' && inputs.dry_run != true) ||
-           (github.event_name == 'schedule' && vars.DAYBOOK_LIVE_SEND == 'true'))
+          ((inputs.trigger != 'cron' && inputs.dry_run != true) ||
+           (inputs.trigger == 'cron' && vars.DAYBOOK_LIVE_SEND == 'true'))
         env:
           API: ${{ secrets.DAYBOOK_API_BASE }}
           TOKEN: ${{ secrets.DAYBOOK_BEARER_TOKEN }}
