@@ -118,7 +118,12 @@ jobs:
           fi
 
       - name: Send
-        if: steps.start.outputs.run_id != '' && inputs.dry_run != true
+        # Scheduled runs only send when the repo variable DAYBOOK_LIVE_SEND is 'true'.
+        # Manual runs send unless dry_run is checked.
+        if: >-
+          steps.start.outputs.run_id != '' &&
+          ((github.event_name == 'workflow_dispatch' && inputs.dry_run != true) ||
+           (github.event_name == 'schedule' && vars.DAYBOOK_LIVE_SEND == 'true'))
         env:
           API: ${{ secrets.DAYBOOK_API_BASE }}
           TOKEN: ${{ secrets.DAYBOOK_BEARER_TOKEN }}
