@@ -1,7 +1,12 @@
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { InviteForm } from "./invite-form";
-import { AdminRowActions, InviteRowActions } from "./row-actions";
+import {
+  AdminRowActions,
+  ExpiredInviteRowActions,
+  InviteRowActions,
+  ResendAllExpiredButton,
+} from "./row-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +23,16 @@ export default async function AdminsPage() {
   const me = await requireAdmin();
   const supabase = await createClient();
 
-  const nowIso = new Date().toISOString();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const nowMs = now.getTime();
 
-  const [{ data: admins }, { data: pendingInvites }, { data: pastInvites }] =
-    await Promise.all([
+  const [
+    { data: admins },
+    { data: pendingInvites },
+    { data: expiredInvites },
+    { data: pastInvites },
+  ] = await Promise.all([
       supabase
         .from("admins")
         .select("id, email, display_name, role, last_active_at, created_at")
@@ -35,12 +46,18 @@ export default async function AdminsPage() {
         .is("revoked_at", null)
         .gt("expires_at", nowIso)
         .order("created_at", { ascending: false }),
+      // Expired but never accepted/revoked -- resendable.
+      supabase
+        .from("admin_invites")
+        .select("id, email, expires_at, last_sent_at, send_count")
+        .is("accepted_at", null)
+        .is("revoked_at", null)
+        .lte("expires_at", nowIso)
+        .order("created_at", { ascending: false }),
       supabase
         .from("admin_invites")
         .select("id, email, accepted_at, revoked_at, expires_at")
-        .or(
-          `accepted_at.not.is.null,revoked_at.not.is.null,expires_at.lte.${nowIso}`
-        )
+        .or("accepted_at.not.is.null,revoked_at.not.is.null")
         .order("created_at", { ascending: false })
         .limit(10),
     ]);
@@ -48,6 +65,25 @@ export default async function AdminsPage() {
   const currentAdmins = admins ?? [];
   const pending = (pendingInvites ?? []) as unknown as InviteRow[];
   const isSoleAdmin = currentAdmins.length <= 1;
+
+  // Latest expired invite per email, hiding anyone who's an admin now.
+  const adminEmails = new Set(currentAdmins.map((a) => a.email.toLowerCase()));
+  const pendingEmails = new Set(pending.map((p) => p.email.toLowerCase()));
+  const expired: Array<{
+    id: string;
+    email: string;
+    expires_at: string;
+    send_count: number;
+  }> = [];
+  {
+    const seen = new Set<string>();
+    for (const inv of expiredInvites ?? []) {
+      const em = String(inv.email).toLowerCase();
+      if (adminEmails.has(em) || pendingEmails.has(em) || seen.has(em)) continue;
+      seen.add(em);
+      expired.push(inv as (typeof expired)[number]);
+    }
+  }
 
   return (
     <div className="space-y-8">
@@ -158,7 +194,7 @@ export default async function AdminsPage() {
               const daysLeft = Math.max(
                 0,
                 Math.ceil(
-                  (new Date(inv.expires_at).getTime() - Date.now()) /
+                  (new Date(inv.expires_at).getTime() - nowMs) /
                     (1000 * 60 * 60 * 24)
                 )
               );
@@ -191,6 +227,44 @@ export default async function AdminsPage() {
         )}
       </section>
 
+      {/* Expired invites -- resendable */}
+      {expired.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h2 className="mip-heading text-lg">
+              Expired invites ({expired.length})
+            </h2>
+            {expired.length > 1 && <ResendAllExpiredButton count={expired.length} />}
+          </div>
+          <p className="text-xs text-mip-gray-500 mb-2">
+            These links stopped working before anyone accepted. Resending emails
+            the same link again, valid for another 7 days.
+          </p>
+          <div
+            className="border border-mip-gray-200"
+            style={{ borderRadius: "var(--radius-button)" }}
+          >
+            {expired.map((inv, i, arr) => (
+              <div
+                key={inv.id}
+                className={`flex items-center gap-3 p-3 ${
+                  i < arr.length - 1 ? "border-b border-mip-gray-200" : ""
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="mip-heading text-sm truncate">{inv.email}</div>
+                  <div className="text-xs text-mip-gray-500 truncate">
+                    Expired {new Date(inv.expires_at).toLocaleDateString()}
+                    {inv.send_count > 1 && ` · sent ${inv.send_count}×`}
+                  </div>
+                </div>
+                <ExpiredInviteRowActions inviteId={inv.id} email={inv.email} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Recent past invites - collapsed footer */}
       {(pastInvites ?? []).length > 0 && (
         <section>
@@ -200,11 +274,7 @@ export default async function AdminsPage() {
             </summary>
             <div className="mt-2 border border-mip-gray-200 rounded overflow-hidden">
               {(pastInvites ?? []).map((inv, i, arr) => {
-                const status = inv.accepted_at
-                  ? "accepted"
-                  : inv.revoked_at
-                  ? "revoked"
-                  : "expired";
+                const status = inv.accepted_at ? "accepted" : "revoked";
                 return (
                   <div
                     key={inv.id}
