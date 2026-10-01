@@ -21,7 +21,10 @@ export function InviteForm() {
       if (result.ok) {
         setMessage({
           type: "success",
-          text: `Invite emailed to ${result.email}. Link is valid for 7 days.`,
+          text:
+            "resent" in result && result.resent
+              ? `${result.email} had an expired invite, so we re-sent it. The link is valid for another 7 days.`
+              : `Invite emailed to ${result.email}. Link is valid for 7 days.`,
         });
         setEmail("");
       } else {
