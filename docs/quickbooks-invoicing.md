@@ -5,7 +5,7 @@ Both Gear and Spaces use the same portal workflow: save a local draft, create an
 ## Deployment and one-time setup
 
 1. Review and merge the feature PR through the normal main-branch process.
-2. Apply `supabase/migrations/0111_quickbooks_invoices.sql` to the production Supabase project with approval. This adds integration, local invoice, OAuth-state, lock and activity tables. All are RLS-enabled with no anonymous/authenticated-role access; only the backend service role can access them.
+2. Migration `supabase/migrations/0111_quickbooks_invoices.sql` was applied to production with approval on October 5, 2026. This adds integration, local invoice, OAuth-state, lock and activity tables. All were verified RLS-enabled with no anonymous/authenticated-role read access; only the backend service role can access them.
 3. Create a dedicated Intuit Developer app for MIP's QuickBooks Online company and obtain production Accounting API credentials. Do not reuse the Re:Action connection in Perplexity. Intuit requires app registration and administrator consent even for an app used only by its own company ([Intuit OAuth guide](https://developer.intuit.com/app/developer/qbo/docs/develop/authentication-and-authorization/oauth-2.0)).
 4. Register this exact redirect URI in the Intuit app:
    `https://app.movementinfrastructureproject.org/api/quickbooks/callback`
@@ -48,11 +48,30 @@ QuickBooks requires customer and product/service references on invoices; actual 
 - Refresh is on demand. No payment webhook or new recurring task is installed.
 - Online-payment availability depends on the MIP QuickBooks company and its existing payment configuration; the portal does not collect card/bank details or enable QuickBooks Payments.
 - OAuth tokens are AES-256-GCM encrypted before database storage. Secrets are never sent to browser components or written into logs. OAuth state is one-use, expires after ten minutes and is bound to both the initiating super admin and an HttpOnly Secure browser cookie.
+- Super admins can explicitly disconnect from `/admin/quickbooks`. This disables invoicing, calls Intuit's token revocation API, then removes local encrypted tokens only after a successful response. Company identity and invoice records remain, so reconnecting cannot silently switch to another company. A failed or ambiguous revoke stays disabled and retryable. Requests, refresh, callbacks and revocation share a connection lock.
+
+## Policy pages and production-registration URLs
+
+Policy wording was approved October 5, 2026, with one implementation disclosure added for the existing Cloudflare anti-spam integration. Confirm the effective date before deploying if publication is delayed. These URLs become live only after the PR is merged and deployed:
+
+- Privacy: `https://app.movementinfrastructureproject.org/reservations/privacy`
+- Terms/EULA: `https://app.movementinfrastructureproject.org/reservations/terms`
+- Host domain: `app.movementinfrastructureproject.org`
+- Launch, connect/reconnect and disconnect landing page: `https://app.movementinfrastructureproject.org/admin/quickbooks`
+- OAuth redirect: `https://app.movementinfrastructureproject.org/api/quickbooks/callback`
+
+The authenticated settings page provides the disconnect confirmation control; merely visiting the URL never revokes access. The policies have links in the footer, reservation forms and integration settings. Gear and Spaces require versioned policy acknowledgement, validate it server-side and log it in existing activity tables before external notifications. No additional database migration is needed.
+
+Analytics are limited to an explicit allowlist of public landing/policy pages, with query strings and fragments removed. Admin, invoice, OAuth, reservation forms, confirmation and unknown routes are denied. The current location is checked at send time as well as the event URL for SPA transitions. Referrer metadata is set to `no-referrer`.
+
+Before production launch, verify the shared space-calendar audience: the pre-existing sync includes requester name and email in event descriptions. The policy discloses this; this PR does not change historical events or calendar-sharing permissions. Confirm organizational retention, provider access and request-handling practices rather than treating policy text as a completed compliance audit.
 
 ## QA inventory and results
 
 - Pure tests: exact-cent allocation, free items, ET dates, Net 15 over DST/year boundaries, invalid dates/email/amounts, quantity precision and JSONB-independent review comparison.
 - Mocked service tests: create once, lost-response retry, failed database linkage, concurrent/stale operations, company mismatch, missing setup confirmation, submitted-draft lock, external invoice changes, no implicit resend, already-sent recovery, payment refresh and unexpected auto-send detection.
 - Isolated browser harness uses the actual React editor with mocked actions only: customer selection, add/remove line, invalid-email feedback, local save, create confirmation, final review, send confirmation and sent state; desktop and 375px mobile layout checks.
-- Production build uses `next build --webpack`. No production schema changes, live customers, invoices, emails or company settings were changed by these tests.
-- Still required: live MIP authorization, actual accounting item/tax mapping, migration application, sandbox/provider validation of OAuth/refresh/create/PDF/send, and an explicitly approved production smoke test.
+- Production build uses `next build --webpack`. No live customers, invoices, emails or company settings were changed by these tests.
+- Additional mocked/pure tests cover disconnect ordering, failed/ambiguous revocation, wrong-company/concurrent operations, repeated disconnect, requests after disconnection, analytics filtering, and rejection of missing/stale policy acknowledgement.
+- October 5 follow-up verification: 112 tests passed across 14 files; TypeScript, production build and focused ESLint passed. Both policy pages were inspected at 1365px and 375px, including policy navigation, mobile menu and footer, with no page errors or horizontal overflow. Isolated browser tests of the actual consent and disconnect components blocked unconfirmed submits and accepted explicitly checked submits using mocked actions only. Live Intuit revocation remains untested.
+- Still required: policy publication, Intuit production approval, live MIP authorization, actual accounting item/tax mapping, provider validation of OAuth/refresh/create/PDF/send/disconnect, and an explicitly approved production smoke test.

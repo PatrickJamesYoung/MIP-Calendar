@@ -74,8 +74,12 @@ export async function withLock<T>(resource: string, fn: () => Promise<T>): Promi
   finally { await db().from("qbo_locks").delete().eq("resource", resource).eq("owner", owner); }
 }
 async function accessToken(c: Connection): Promise<string> {
+  if (!c.tokens_encrypted) throw new Error("QuickBooks is disconnected. Reconnect the MIP company in settings.");
   if (Date.parse(c.access_expires_at) > Date.now() + 120000) return decryptTokens(c.tokens_encrypted).access_token;
-  return withLock("oauth", async () => {
+  // Caller holds the shared OAuth lock through refresh AND the API request.
+  // Disconnect and callback use that same lock, so a stale request cannot
+  // continue with a token captured before revocation.
+  {
     const latest = await connection();
     if (!latest || latest.realm_id !== c.realm_id) throw new Error("QuickBooks connection changed. Reload.");
     if (Date.parse(latest.access_expires_at) > Date.now() + 120000) return decryptTokens(latest.tokens_encrypted).access_token;
@@ -89,7 +93,7 @@ async function accessToken(c: Connection): Promise<string> {
     }).eq("id", true);
     if (error) throw new Error("Could not save the refreshed QuickBooks connection. Retry before invoicing.");
     return next.access_token;
-  });
+  }
 }
 export async function rawRequest(c: Pick<Connection, "realm_id" | "environment">, token: string,
   path: string, body?: unknown, requestId?: string, pdf = false) {
@@ -114,14 +118,56 @@ export async function rawRequest(c: Pick<Connection, "realm_id" | "environment">
   return res;
 }
 export async function qbo<T>(path: string, body?: unknown, requestId?: string): Promise<T> {
-  const c = await connection();
-  if (!c) throw new Error("Connect the MIP QuickBooks company first.");
-  return (await rawRequest(c, await accessToken(c), path, body, requestId)).json();
+  return withLock("oauth", async () => {
+    const c = await connection();
+    if (!c) throw new Error("Connect the MIP QuickBooks company first.");
+    if (body !== undefined && (!c.enabled || !c.auto_send_disabled_confirmed))
+      throw new Error("QuickBooks invoicing is disabled. Review the company settings.");
+    return (await rawRequest(c, await accessToken(c), path, body, requestId)).json();
+  });
 }
 export async function qboPdf(path: string) {
-  const c = await connection();
-  if (!c) throw new Error("QuickBooks is not connected.");
-  return (await rawRequest(c, await accessToken(c), path, undefined, undefined, true)).arrayBuffer();
+  return withLock("oauth", async () => {
+    const c = await connection();
+    if (!c) throw new Error("QuickBooks is not connected.");
+    return (await rawRequest(c, await accessToken(c), path, undefined, undefined, true)).arrayBuffer();
+  });
+}
+
+/** Retain company identity and accounting records, but erase local credentials
+ * only after Intuit confirms revocation. Failed/ambiguous revocation stays
+ * disabled and retryable; never report it as a successful disconnect. */
+export async function disconnectCompany(expectedRealm: string) {
+  return withLock("oauth", async () => {
+    const c = await connection();
+    if (!c || c.realm_id !== expectedRealm) throw new Error("Company changed. Reload before disconnecting.");
+    const { error: disableError } = await db().from("qbo_connection").update({
+      enabled: false, auto_send_disabled_confirmed: false, updated_at: new Date().toISOString(),
+    }).eq("id", true).eq("realm_id", expectedRealm);
+    if (disableError) throw new Error("Could not disable invoicing. No revocation request was made.");
+    if (!c.tokens_encrypted) return;
+    const config = configuration();
+    let res: Response;
+    try {
+      res = await fetch("https://developer.api.intuit.com/v2/oauth2/tokens/revoke", {
+        method: "POST", cache: "no-store", signal: AbortSignal.timeout(20000),
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64")}`,
+          "Content-Type": "application/json", Accept: "application/json",
+        },
+        body: JSON.stringify({ token: decryptTokens(c.tokens_encrypted).refresh_token }),
+      });
+    } catch {
+      throw new Error("Invoicing is disabled, but Intuit revocation could not be confirmed. Retry disconnect or revoke access in Intuit.");
+    }
+    if (!res.ok)
+      throw new Error(`Invoicing is disabled, but Intuit revocation was not confirmed (HTTP ${res.status}). Retry disconnect or revoke access in Intuit.`);
+    const { error } = await db().from("qbo_connection").update({
+      tokens_encrypted: "", access_expires_at: new Date(0).toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", true).eq("realm_id", expectedRealm);
+    if (error) throw new Error("Intuit confirmed revocation, but local credential cleanup failed. Retry disconnect; invoicing remains disabled.");
+  });
 }
 export function queryLiteral(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");

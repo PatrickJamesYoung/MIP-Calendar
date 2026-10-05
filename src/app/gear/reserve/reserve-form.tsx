@@ -5,6 +5,7 @@ import Script from "next/script";
 import Link from "next/link";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { submitReservationAction } from "./actions";
+import { ReservationPolicyConsent } from "@/components/reservation-policy-consent";
 
 interface Line {
   slug: string;
@@ -494,6 +495,7 @@ export function ReserveForm(props: Props) {
               {tentativeDisclaimer}
             </p>
           )}
+          <ReservationPolicyConsent />
 
           {turnstileSiteKey && (
             <div className="mt-4">
@@ -518,8 +520,8 @@ export function ReserveForm(props: Props) {
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-mip-gray-500 max-w-md">
-            By submitting, you agree to give {orgName} organizers a way to
-            reach you about this request. We don't share your info.
+            {orgName} uses your information to coordinate this request and
+            related billing, with service providers as described in the Privacy Policy.
           </p>
           <button
             type="submit"

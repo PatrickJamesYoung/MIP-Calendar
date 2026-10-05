@@ -1,0 +1,1 @@
+export const RESERVATION_POLICY_VERSION = "2026-10-05";

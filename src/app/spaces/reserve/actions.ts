@@ -7,6 +7,7 @@ import { verifyTurnstile } from "@/lib/turnstile";
 import { sendSpaceTemplateEmail } from "@/lib/spaces/email";
 import { notifyOrganizersOfNewSpaceRequest } from "@/lib/spaces/notify";
 import { datetimeLocalToUtcIso } from "@/lib/ingest/normalize";
+import { RESERVATION_POLICY_VERSION } from "@/lib/reservation-policy-version";
 
 const reserveSchema = z.object({
   requester_name: z.string().min(1).max(120),
@@ -20,6 +21,7 @@ const reserveSchema = z.object({
   event_end_at: z.string().min(1),
   load_out_at: z.string().min(1),
   acknowledged_tentative: z.literal("true"),
+  acknowledged_policies: z.literal(RESERVATION_POLICY_VERSION),
   spaces: z.string().min(1).max(1000),
   org_tier: z.enum(["full", "mid", "low"]).optional(),
   // JSON-encoded array of strings, e.g. '["Cricut","Projector"]'. Optional
@@ -270,6 +272,17 @@ export async function submitSpaceReservationAction(
       ok: false,
       error: `Couldn't save your spaces: ${linesErr.message}`,
     };
+  }
+
+  const { error: policyError } = await supabase.from("spaces_activity").insert({
+    reservation_id: resInsert.id,
+    actor_email: v.requester_email.trim().toLowerCase(),
+    action: "reservation_policies_accepted",
+    detail: { version: RESERVATION_POLICY_VERSION, terms: "/reservations/terms", privacy: "/reservations/privacy" },
+  });
+  if (policyError) {
+    await supabase.from("spaces_reservations").delete().eq("id", resInsert.id);
+    return { ok: false, error: "Could not record your policy acknowledgement. Please try again." };
   }
 
   // ---- Ack email (best-effort) -------------------------------------------

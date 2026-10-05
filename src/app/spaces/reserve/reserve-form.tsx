@@ -1,4 +1,5 @@
 "use client";
+import { ReservationPolicyConsent } from "@/components/reservation-policy-consent";
 
 import { useState, useTransition, useEffect, useMemo, useRef } from "react";
 import Script from "next/script";
@@ -598,6 +599,7 @@ export function ReserveSpacesForm({
               confirmed booking. Someone from MIP will follow up to confirm.
             </span>
           </label>
+          <ReservationPolicyConsent />
 
           {turnstileSiteKey && (
             <div ref={turnstileContainerRef} className="cf-turnstile" />

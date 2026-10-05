@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireSuperAdmin } from "@/lib/auth";
-import { configuration, connection, db, qbo } from "@/lib/quickbooks/client";
+import { configuration, connection, db, qbo, disconnectCompany } from "@/lib/quickbooks/client";
 import { idSchema } from "@/lib/quickbooks/model";
 
 export async function connectQuickBooks() {
@@ -32,6 +32,17 @@ export async function connectQuickBooks() {
 }
 
 export type ItemOption = { Id: string; Name: string; Type: string; Active: boolean };
+export async function disconnectQuickBooks(formData: FormData) {
+  await requireSuperAdmin();
+  const parsed = z.object({ realm: idSchema, confirmDisconnect: z.literal("on") })
+    .safeParse(Object.fromEntries(formData));
+  if (!parsed.success) redirect("/admin/quickbooks?error=Confirm+the+disconnect+before+continuing.");
+  try { await disconnectCompany(parsed.data.realm); }
+  catch (e) { redirect(`/admin/quickbooks?error=${encodeURIComponent((e as Error).message)}`); }
+  revalidatePath("/admin/quickbooks");
+  redirect("/admin/quickbooks?disconnected=1");
+}
+
 export async function saveQuickBooksSettings(formData: FormData) {
   await requireSuperAdmin();
   const parsed = z.object({
@@ -43,7 +54,7 @@ export async function saveQuickBooksSettings(formData: FormData) {
   const v = parsed.data;
   try {
     const c = await connection();
-    if (!c || c.realm_id !== v.realm) throw new Error("Company changed. Reload and confirm the MIP company.");
+    if (!c?.tokens_encrypted || c.realm_id !== v.realm) throw new Error("Company changed or disconnected. Reconnect and confirm the MIP company.");
     for (const id of new Set([v.gearItem, v.spacesItem])) {
       const { Item } = await qbo<{ Item: ItemOption }>(`item/${id}`);
       if (!Item?.Active || !["Service", "NonInventory"].includes(Item.Type))

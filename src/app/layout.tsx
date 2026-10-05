@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Montserrat, Work_Sans } from "next/font/google";
-import { Analytics } from "@vercel/analytics/next";
+import { PrivacySafeAnalytics } from "@/components/privacy-safe-analytics";
 import "./globals.css";
 
 const montserrat = Montserrat({
@@ -18,6 +18,7 @@ const workSans = Work_Sans({
 });
 
 export const metadata: Metadata = {
+  referrer: "no-referrer",
   title: "Movement Calendar — Movement Infrastructure Project",
   description:
     "A resource for our community, to help people find ways to plug into actions and events, support organizers in getting the word out, and compile important dates in our political and economic landscape.",
@@ -40,7 +41,7 @@ export default function RootLayout({
     >
       <body className="antialiased">
         {children}
-        <Analytics />
+        <PrivacySafeAnalytics />
       </body>
     </html>
   );

@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export function SiteFooter() {
   return (
     <footer className="w-full bg-mip-black text-mip-white mt-16">
@@ -18,6 +20,10 @@ export function SiteFooter() {
         style={{ maxWidth: "var(--max-width-content)" }}
       >
         Unless otherwise stated, MIP did not organize these actions and inclusion is not an endorsement.
+        <nav aria-label="Legal" className="mt-3 flex flex-wrap gap-4">
+          <Link className="underline" href="/reservations/privacy">Reservations Privacy Policy</Link>
+          <Link className="underline" href="/reservations/terms">Reservations Terms of Use</Link>
+        </nav>
       </div>
     </footer>
   );
