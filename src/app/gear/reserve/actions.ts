@@ -9,6 +9,7 @@ import { sendGearTemplateEmail } from "@/lib/gear/email";
 import { notifyOrganizersOfNewGearRequest } from "@/lib/gear/notify";
 import { parseCart } from "./cart";
 import { datetimeLocalToUtcIso } from "@/lib/ingest/normalize";
+import { RESERVATION_POLICY_VERSION } from "@/lib/reservation-policy-version";
 
 const reserveSchema = z.object({
   requester_name: z.string().min(1).max(120),
@@ -21,6 +22,7 @@ const reserveSchema = z.object({
   return_at: z.string().min(1),
   pickup_location: z.string().max(300).optional().or(z.literal("")),
   acknowledged_tentative: z.literal("true"),
+  acknowledged_policies: z.literal(RESERVATION_POLICY_VERSION),
   cart: z.string().min(1).max(2000),
 });
 
@@ -227,6 +229,18 @@ export async function submitReservationAction(
       ok: false,
       error: `Couldn't save your items: ${linesErr.message}`,
     };
+  }
+
+  // Persist affirmative terms acknowledgement before any external messages/tasks.
+  const { error: policyError } = await supabase.from("gear_activity").insert({
+    reservation_id: resInsert.id,
+    actor_email: v.requester_email.trim().toLowerCase(),
+    action: "reservation_policies_accepted",
+    detail: { version: RESERVATION_POLICY_VERSION, terms: "/reservations/terms", privacy: "/reservations/privacy" },
+  });
+  if (policyError) {
+    await supabase.from("gear_reservations").delete().eq("id", resInsert.id);
+    return { ok: false, error: "Could not record your policy acknowledgement. Please try again." };
   }
 
   // ---- 7b. Create Notion tasks (best-effort, never blocks) --------------

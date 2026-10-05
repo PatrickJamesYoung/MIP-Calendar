@@ -310,6 +310,13 @@ export default async function SpaceReservationDetail(props: {
             )}
           </Panel>
 
+          <div className="rounded-lg border p-4">
+            <h2 className="text-lg font-semibold">Invoice</h2>
+            <p className="mt-1 text-sm text-neutral-600">Review itemized charges and send through MIP QuickBooks.</p>
+            <Link className="mt-3 inline-block rounded border px-4 py-2 text-sm font-medium" href={`/admin/invoices/spaces/${encodeURIComponent(human_id)}`}>
+              Open invoice
+            </Link>
+          </div>
           <EmailsPanel emails={emailsData} />
         </div>
       </div>

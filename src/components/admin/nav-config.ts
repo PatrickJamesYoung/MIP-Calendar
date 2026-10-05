@@ -85,9 +85,10 @@ export const NAV: NavEntry[] = [
     kind: "group",
     group: {
       label: "Admin",
-      activePrefixes: ["/admin/admins", "/admin/ingestion", "/admin/audit"],
+      activePrefixes: ["/admin/admins", "/admin/ingestion", "/admin/audit", "/admin/quickbooks"],
       items: [
         { href: "/admin/admins", label: "Admins" },
+        { href: "/admin/quickbooks", label: "QuickBooks", superOnly: true },
         { href: "/admin/ingestion", label: "Ingestion", superOnly: true },
         { href: "/admin/audit", label: "Audit" },
       ],
