@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { connection } from "@/lib/quickbooks/client";
 import { loadReservationInvoice } from "@/lib/quickbooks/invoices";
 import { kindSchema } from "@/lib/quickbooks/model";
+import { zapierEnabled } from "@/lib/quickbooks/zapier";
 import { InvoiceEditor } from "../../invoice-editor";
 
 export const dynamic = "force-dynamic";
@@ -17,20 +18,26 @@ export default async function InvoicePage({ params }: { params: Promise<{ kind: 
   let company = "";
   let enabled = false;
   let error = "";
+  const mode = zapierEnabled() ? "zapier" as const : "direct" as const;
   try {
     data = await loadReservationInvoice(kind.data, human_id, admin.email);
-    const c = await connection();
-    company = c ? `${c.company_name} (${c.environment})` : "Not connected";
-    enabled = !!c?.enabled;
+    if (zapierEnabled()) {
+      company = "MIP QuickBooks via Zapier";
+      enabled = true;
+    } else {
+      const c = await connection();
+      company = c ? `${c.company_name} (${c.environment})` : "Not connected";
+      enabled = !!c?.enabled;
+    }
   } catch (e) { error = (e as Error).message; }
   return <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
     <Link href={`/admin/${kind.data}/${encodeURIComponent(human_id)}`} className="text-sm underline">Back to reservation</Link>
     <div><h1 className="text-xl font-bold">Invoice for {human_id}</h1><p className="mt-1 text-sm text-neutral-600">QuickBooks company: {company}</p></div>
     {error && <p role="alert" className="rounded border border-red-300 bg-red-50 p-4">{error}</p>}
     {!enabled && <p className="rounded border border-amber-300 bg-amber-50 p-4">
-      Invoicing is not enabled yet. A super admin must connect and confirm MIP in{" "}
+      Invoicing is not enabled yet. Configure the Zapier webhook (see docs/quickbooks-invoicing.md) or have a super admin connect MIP in{" "}
       <Link className="underline" href="/admin/quickbooks">QuickBooks settings</Link>.
     </p>}
-    {data && <InvoiceEditor initial={data.row} enabled={enabled} />}
+    {data && <InvoiceEditor initial={data.row} enabled={enabled} mode={mode} />}
   </div>;
 }

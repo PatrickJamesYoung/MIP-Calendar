@@ -1,5 +1,44 @@
 # MIP reservation invoicing
 
+## Zapier mode (current path)
+
+When `ZAPIER_INVOICE_WEBHOOK_URL` is set, the portal uses Zapier's managed QuickBooks Online connection instead of the custom Intuit app below. No Intuit Developer app, OAuth tokens or `/admin/quickbooks` setup is needed.
+
+Flow: Gear or Spaces reservation → **Create / view QuickBooks invoice** → review itemized lines (Net 15 default) → check the approval box → **Create invoice in QuickBooks via Zapier**. The portal posts one JSON request to the Zap and shows "waiting" until the Zap's last step calls back with the QuickBooks invoice ID. The invoice is then linked on the reservation with an **Open invoice in QuickBooks** button. The button never emails the customer; send from QuickBooks.
+
+### Vercel environment variables (Production)
+
+- `ZAPIER_INVOICE_WEBHOOK_URL` — the Zap's Catch Hook URL (`https://hooks.zapier.com/hooks/catch/...`). Treat as a secret.
+- `ZAPIER_INVOICE_CALLBACK_SECRET` — random string, 32+ characters (`openssl rand -hex 32`). The Zap sends it back as `Authorization: Bearer <secret>`.
+
+Unset `ZAPIER_INVOICE_WEBHOOK_URL` to fall back to the direct-Intuit mode.
+
+### Zap recipe ("MIP reservation → QuickBooks invoice")
+
+1. **Webhooks by Zapier → Catch Hook.** Copy the URL into `ZAPIER_INVOICE_WEBHOOK_URL`. Send a test from a reservation to load sample fields.
+2. **QuickBooks Online → Find Invoice** by Invoice Number = `doc_number`. Turn on "continue if nothing is found".
+3. **Filter by Zapier:** only continue if step 2 `ID` does not exist. This makes a resend safe: an invoice already numbered with the reservation ID is never created twice.
+4. **QuickBooks Online → Find or Create Customer:** search by Display Name = `customer_name` (or email = `customer_email`); create with Display Name `customer_name`, Email `customer_email`.
+5. **QuickBooks Online → Create Invoice (with line item support):**
+   - Customer: step 4 ID. Email: `customer_email`. Invoice number: `doc_number`. Invoice date: `invoice_date`. Due date: `due_date`. Message on invoice: `customer_memo`. Statement memo / private note: `private_note`.
+   - Line items: map `line_items description`, `line_items quantity` (always 1), `line_items rate` (exact line total) and, for Product/Service, a single MIP income item chosen with the bookkeeper (or use Paths on `reservation_kind` for separate Gear and Space items).
+   - Do not enable "send email" in this step.
+6. **Webhooks by Zapier → POST** to `callback_url` (`https://app.movementinfrastructureproject.org/api/zapier/invoice-callback`), Payload Type JSON, header `Authorization: Bearer <ZAPIER_INVOICE_CALLBACK_SECRET>`, data:
+   `request_id` = step 1 `request_id`; `status` = `created`; `invoice_id` = step 5 ID; `doc_number` = step 5 Doc Number; `total` = step 5 Total Amt; `due_date` = step 5 Due Date; `customer_name` = step 4 Display Name.
+   Optional: a Zapier error-handler path can POST `status=failed` with `error` text so the portal shows the failure.
+
+Also confirm QuickBooks automatic emailing of new invoices is off (see step 7 below), or customers may be emailed on creation.
+
+### Behavior and safety (Zapier mode)
+
+- Each line is sent as quantity 1 at its exact line total, so QuickBooks matches the portal's sliding-scale total to the cent; the original quantity is kept in the description.
+- The request ID and payload are frozen before the call. **Resend same request to Zapier** reuses both, and step 3 prevents duplicates.
+- A Zapier non-2xx reply returns the record to draft (nothing was created). A timeout keeps it pending for resend after checking Zap history.
+- Zapier's hook acknowledgment is not treated as success; only the authenticated callback links an invoice. A second callback with a different invoice ID is recorded as a duplicate warning and never overwrites the first.
+- Each successful run uses Zapier tasks from MIP's plan (about 4 per invoice).
+
+## Direct Intuit mode (original implementation)
+
 Both Gear and Spaces use the same portal workflow: save a local draft, create an invoice in MIP QuickBooks Online, review the provider's final invoice/PDF, then explicitly send it. Itemized line amounts preserve the saved sliding-scale total exactly; the initial invoice date is Eastern time and the due date defaults to Net 15.
 
 ## Deployment and one-time setup
