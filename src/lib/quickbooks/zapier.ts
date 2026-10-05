@@ -36,7 +36,7 @@ export type ZapierInvoicePayload = ReturnType<typeof buildZapierPayload>;
  * Flat, Zapier-friendly payload. Each line is sent as quantity 1 at the exact
  * line total so QuickBooks reproduces the saved sliding-scale amount to the
  * cent (Qty × Rate rounding cannot drift). The original quantity is kept in
- * the description and as a separate field.
+ * the description (prefixed, e.g. "3 × Wireless mic") and as a separate field.
  */
 export function buildZapierPayload(args: {
   draft: InvoiceDraft; kind: ReservationKind; humanId: string;
@@ -66,7 +66,7 @@ export function buildZapierPayload(args: {
     line_count: draft.lines.length,
     line_items: draft.lines.map(l => ({
       description: l.quantity !== 1
-        ? `${l.description} × ${Number(l.quantity.toFixed(4))}`.slice(0, 500)
+        ? `${Number(l.quantity.toFixed(4))} × ${l.description}`.slice(0, 500)
         : l.description,
       quantity: 1,
       rate: l.amount,

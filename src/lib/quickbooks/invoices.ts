@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { connection, db, qbo, queryLiteral, QuickBooksError, withLock } from "./client";
-import { allocateCents, draftSchema, etDate, idSchema, plusDays, reviewFingerprint, salesLines,
+import { allocateCents, slidingScale, draftSchema, etDate, idSchema, plusDays, reviewFingerprint, salesLines,
   type InvoiceDraft, type InvoiceSnapshot, type ReservationKind } from "./model";
 import { buildZapierPayload, postToZapier, snapshotFromCallback, zapierConfiguration, zapierEnabled,
   ZapierRejected, type ZapierCallback } from "./zapier";
@@ -86,12 +86,22 @@ export async function loadReservationInvoice(kind: ReservationKind, humanId: str
   if (lineError || !lines?.length) throw new Error("This reservation has no invoiceable lines.");
   const amounts = allocateCents(lines.map(l => Number(l.line_full ?? 0)), Number(r.contribution_total ?? 0));
   const today = etDate();
+  const settingKey = r.org_tier ? `tier_${r.org_tier}_label` : "";
+  const label = settingKey
+    ? (await db().from(`${prefix}_settings`).select("value").eq("key", settingKey).maybeSingle()).data?.value
+    : null;
+  const scale = slidingScale({
+    tier: r.org_tier, multiplier: Number(r.contribution_multiplier ?? 1),
+    listedTotal: Number(r.subtotal_full ?? 0), contribution: Number(r.contribution_total ?? 0),
+    label: typeof label === "string" ? label : null,
+  });
+  const reference = `${humanId}${r.event_title ? `: ${r.event_title}` : ""}`;
   const draft: InvoiceDraft = {
     customerId: "", customerName: String(r.organization || r.requester_name || "").slice(0, 100),
     email: r.requester_email || "", invoiceDate: today, dueDate: plusDays(today, 15),
-    memo: `${humanId}${r.event_title ? `: ${r.event_title}` : ""}`.slice(0, 1000),
+    memo: (scale ? `${reference}\n\n${scale.memo}` : reference).slice(0, 1000),
     lines: lines.map((l, i) => ({
-      description: `${l.name_snapshot}${kind === "spaces" ? " (hours)" : ""}`.slice(0, 500),
+      description: `${l.name_snapshot}${kind === "spaces" ? " (hours)" : ""}${scale ? scale.format(Number(l.line_full ?? 0)) : ""}`.slice(0, 500),
       quantity: Number(kind === "gear" ? l.quantity : l.hours_billed) || 1, amount: amounts[i],
     })),
   };

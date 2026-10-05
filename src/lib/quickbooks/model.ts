@@ -76,3 +76,33 @@ export function salesLines(draft: InvoiceDraft, itemId: string, taxCode: string)
     },
   }));
 }
+
+const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+const TIER_NUMBER: Record<string, number> = { full: 1, mid: 2, low: 3 };
+
+/**
+ * Customer-facing explanation of MIP's three-tier sliding scale, printed on
+ * the QuickBooks invoice. Uses the multiplier stored on the reservation (the
+ * rate actually applied), not current settings. Returns null when the
+ * reservation has no tier (e.g. calendar-imported space bookings).
+ */
+export function slidingScale(input: {
+  tier: string | null | undefined; multiplier: number; listedTotal: number;
+  contribution: number; label?: string | null;
+}) {
+  const n = input.tier ? TIER_NUMBER[input.tier] : undefined;
+  if (!n || !Number.isFinite(input.multiplier)) return null;
+  const pct = Math.round(input.multiplier * 100);
+  // Gear labels are full sentences meant for the request form; only short labels read well on an invoice.
+  const label = input.label && input.label.length <= 60 ? input.label.trim() : "";
+  const tierName = `Tier ${n} of 3${label ? ` (${label})` : ""}`;
+  const rate = pct === 100 ? "the full listed rate" : `${pct}% of the listed rate`;
+  return {
+    tierName,
+    memo: `Sliding scale: ${tierName}, ${rate}. ` +
+      (pct === 100 ? `Contribution: ${usd(input.contribution)}.` :
+        `Listed rate ${usd(input.listedTotal)}; your sliding-scale contribution is ${usd(input.contribution)}.`) +
+      " MIP uses a three-tier sliding scale so every group can access movement infrastructure.",
+    format: (listedLine: number) => pct === 100 ? "" : ` (listed ${usd(listedLine)}; Tier ${n} rate, ${pct}%)`,
+  };
+}
