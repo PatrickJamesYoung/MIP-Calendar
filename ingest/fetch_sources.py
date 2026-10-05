@@ -10,6 +10,7 @@ Outputs (one file per source, or per-org for Mobilize):
     raw_rhizome.html             (best-effort; JS-rendered, often 0)
     raw_festival_center.ics
     raw_the_51st.xml             (Ghost RSS for the Civics Roundup tag)
+    raw_grassroots_details.json  (per-event Free DC signals, see below)
 
 Also generates:
     existing_rows.json           (fetched from /api/ingest/dedup-state)
@@ -110,6 +111,78 @@ def fetch_grassroots() -> None:
         RUN_DIR / "raw_grassroots.html",
         kind="html",
     )
+    fetch_grassroots_details()
+
+
+# Grassroots DC re-lists many Free DC events, often retitled, so title
+# matching against the Free DC feed misses them. The list page rarely
+# names the organizer, but each event's detail page links back to
+# freedcproject.org (or says "Free DC") when it's a Free DC event.
+_GRASSROOTS_DETAIL_CAP = 80
+# Case-sensitive on purpose: the org is "Free DC"; lowercase "a safe and
+# free DC" (seen on Community Safety Fair 2026) is just a phrase.
+_FREE_DC_TEXT_RE = r"\b(?:Free|FREE)\s?DC\b"
+
+
+def fetch_grassroots_details() -> None:
+    """Fetch each upcoming Grassroots DC event page and record whether it's
+    a Free DC event. Writes raw_grassroots_details.json:
+
+        {"https://grassrootsdc.org/events-list/...": {
+            "free_dc": true, "evidence": "link: https://freedcproject.org/..."}}
+
+    cross_source_dedup.py drops Grassroots rows flagged free_dc. Best effort:
+    a failed page fetch just means no flag for that event.
+    """
+    import re
+    from concurrent.futures import ThreadPoolExecutor
+
+    from bs4 import BeautifulSoup
+
+    dest = RUN_DIR / "raw_grassroots_details.json"
+    try:
+        list_html = (RUN_DIR / "raw_grassroots.html").read_text(encoding="utf-8", errors="replace")
+    except Exception as e:
+        print(f"  [grassroots-details] could not read list page: {e}", file=sys.stderr)
+        dest.write_text("{}", encoding="utf-8")
+        return
+
+    soup = BeautifulSoup(list_html, "html.parser")
+    urls: list[str] = []
+    for a in soup.select(".eventlist-event .eventlist-title-link, .eventlist-event .eventlist-title a"):
+        href = a.get("href", "")
+        # Same URL construction as runner.py parse_grassroots(), so keys match event_url.
+        url = "https://grassrootsdc.org" + href if href.startswith("/") else href
+        if url and url not in urls:
+            urls.append(url)
+    urls = urls[:_GRASSROOTS_DETAIL_CAP]
+
+    def check(url: str) -> tuple[str, dict]:
+        try:
+            r = requests.get(url, headers={"User-Agent": UA}, timeout=20)
+            r.raise_for_status()
+        except Exception as e:
+            return url, {"free_dc": False, "error": str(e)[:200]}
+        d = BeautifulSoup(r.text, "html.parser")
+        body = d.select_one(".eventitem-column-content") or d.select_one("article") or d
+        for a in body.select("a[href]"):
+            h = a["href"].lower()
+            if "freedcproject.org" in h or "freedc.org" in h:
+                return url, {"free_dc": True, "evidence": f"link: {a['href'][:200]}"}
+        m = re.search(_FREE_DC_TEXT_RE, body.get_text(" "))
+        if m:
+            return url, {"free_dc": True, "evidence": "text mentions Free DC"}
+        return url, {"free_dc": False}
+
+    results: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for url, info in pool.map(check, urls):
+            results[url] = info
+
+    dest.write_text(json.dumps(results, indent=1), encoding="utf-8")
+    flagged = sum(1 for v in results.values() if v.get("free_dc"))
+    errors = sum(1 for v in results.values() if v.get("error"))
+    print(f"  [grassroots-details] {len(results)} pages, {flagged} Free DC, {errors} errors")
 
 
 def fetch_mobilize() -> None:

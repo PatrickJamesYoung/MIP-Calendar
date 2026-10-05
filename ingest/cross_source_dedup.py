@@ -69,6 +69,34 @@ SOURCE_PRIORITY: dict[str, int] = {
 # via The 51st's roundup the following week.
 DROP_IF_POSTED_SOURCES: set[str] = {"The 51st"}
 
+# Grassroots DC must never submit Free DC events -- Free DC's own feed is
+# the source of truth for those. fetch_sources.py writes per-event signals
+# from each Grassroots detail page (links to freedcproject.org / mentions
+# "Free DC"); we also check the list-page title/description.
+GRASSROOTS_DETAILS = RUN_DIR / "raw_grassroots_details.json"
+# Case-sensitive "Free DC" (the org), not lowercase "a safe and free DC".
+_FREE_DC_RE = re.compile(r"\b(?:Free|FREE)\s?DC\b|(?i:freedcproject\.org)")
+
+
+def _load_grassroots_details() -> dict[str, dict[str, Any]]:
+    try:
+        data = json.loads(GRASSROOTS_DETAILS.read_text())
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _grassroots_free_dc_evidence(ev: dict[str, Any], details: dict[str, dict[str, Any]]) -> str | None:
+    if ev.get("source") != "Grassroots DC":
+        return None
+    info = details.get(ev.get("event_url") or "") or {}
+    if info.get("free_dc"):
+        return str(info.get("evidence") or "detail page")
+    for field in ("title", "description", "host"):
+        if _FREE_DC_RE.search(str(ev.get(field) or "")):
+            return f"{field} mentions Free DC"
+    return None
+
 
 def _normalize_title(t: str) -> str:
     if not t:
@@ -125,7 +153,25 @@ def dedupe(events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dic
     """
     report: list[dict[str, Any]] = []
 
-    # ---- pass 0: aggregator events already on the calendar ----------------
+    # ---- pass 0a: Grassroots DC re-listings of Free DC events -------------
+    gr_details = _load_grassroots_details()
+    not_free_dc: list[dict[str, Any]] = []
+    for ev in events:
+        why = _grassroots_free_dc_evidence(ev, gr_details)
+        if why:
+            report.append(
+                {
+                    "match_type": "grassroots_free_dc",
+                    "evidence": why,
+                    "kept": {"source": "Free DC", "title": ev.get("title"), "date": ev.get("date")},
+                    "dropped": {"source": ev["source"], "title": ev.get("title"), "date": ev.get("date")},
+                }
+            )
+            continue
+        not_free_dc.append(ev)
+    events = not_free_dc
+
+    # ---- pass 0b: aggregator events already on the calendar ---------------
     fresh: list[dict[str, Any]] = []
     for ev in events:
         if ev.get("source") in DROP_IF_POSTED_SOURCES and ev.get("movement_calendar") == "Posted":
