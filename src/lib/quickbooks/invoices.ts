@@ -4,6 +4,8 @@ import { z } from "zod";
 import { connection, db, qbo, queryLiteral, QuickBooksError, withLock } from "./client";
 import { allocateCents, draftSchema, etDate, idSchema, plusDays, reviewFingerprint, salesLines,
   type InvoiceDraft, type InvoiceSnapshot, type ReservationKind } from "./model";
+import { buildZapierPayload, postToZapier, snapshotFromCallback, zapierConfiguration, zapierEnabled,
+  ZapierRejected, type ZapierCallback } from "./zapier";
 
 export type InvoiceRow = {
   id: string; draft: InvoiceDraft; revision: number;
@@ -114,6 +116,7 @@ export async function saveDraft(id: string, revision: number, input: unknown, ac
   });
 }
 export async function searchCustomers(search: string) {
+  if (zapierEnabled()) throw new Error("Customer lookup happens in Zapier: it finds the QuickBooks customer by name/email or creates one.");
   await activeConnection();
   const text = z.string().trim().min(2).max(80).parse(search);
   const query = `select * from Customer where Active = true and DisplayName LIKE '%${queryLiteral(text.replace(/[%_]/g, ""))}%' maxresults 30`;
@@ -154,6 +157,7 @@ function retryWindow(started: string | null) {
     throw new Error("This operation is unresolved after 23 hours. Reconcile it before retrying; no replacement invoice was created.");
 }
 export async function createInvoice(id: string, revision: number, actor: string) {
+  if (zapierEnabled()) return createInvoiceViaZapier(id, revision, actor);
   return withLock(`invoice:${id}`, async () => {
     let row = await readInvoice(id);
     const firstAttempt = row.status === "draft";
@@ -271,3 +275,92 @@ export async function sendInvoice(id: string, reviewed: InvoiceSnapshot, actor: 
 }
 
 export async function verifyInvoiceCompany(row: InvoiceRow) { await activeConnection(row); }
+
+async function reservationHumanId(row: InvoiceRow): Promise<{ kind: ReservationKind; humanId: string }> {
+  const kind: ReservationKind = row.gear_reservation_id ? "gear" : "spaces";
+  const { data, error } = await db().from(`${kind}_reservations`).select("human_id")
+    .eq("id", row.gear_reservation_id || row.spaces_reservation_id).single();
+  if (error || !data?.human_id) throw new Error("Reservation for this invoice was not found.");
+  return { kind, humanId: String(data.human_id) };
+}
+
+/**
+ * Button → Zapier. Freezes the payload and request ID before the external
+ * call; a resend reuses both. The record stays "creating" until the Zap's
+ * authenticated callback reports the QuickBooks invoice ID.
+ */
+export async function createInvoiceViaZapier(id: string, revision: number, actor: string) {
+  const config = zapierConfiguration();
+  return withLock(`invoice:${id}`, async () => {
+    let row = await readInvoice(id);
+    if (row.qbo_invoice_id) return row;
+    if (!["draft", "creating"].includes(row.status)) throw new Error("Invoice is not ready to create.");
+    if (row.status === "draft" && row.revision !== revision) throw new Error("Draft changed. Review the latest saved version.");
+    const firstAttempt = row.status === "draft";
+    const draft = draftSchema.parse(row.draft);
+    if (firstAttempt) {
+      const { kind, humanId } = await reservationHumanId(row);
+      const requestId = randomUUID();
+      const payload = buildZapierPayload({
+        draft, kind, humanId, invoiceRecordId: row.id, requestId,
+        callbackUrl: config.callbackUrl, requestedBy: actor,
+      });
+      await patch(id, {
+        status: "creating", realm_id: "zapier", environment: "production",
+        create_request_id: requestId, create_started_at: new Date().toISOString(),
+        create_payload: payload, last_error: null,
+      });
+      row = await readInvoice(id);
+    }
+    try {
+      await postToZapier(row.create_payload as ReturnType<typeof buildZapierPayload>);
+      await patch(id, { last_error: null });
+      await audit(row, actor, firstAttempt ? "invoice_requested_via_zapier" : "invoice_request_resent_to_zapier");
+      return readInvoice(id);
+    } catch (e) {
+      const reset = firstAttempt && e instanceof ZapierRejected;
+      await patch(id, {
+        last_error: (e as Error).message,
+        ...(reset ? { status: "draft", create_payload: null, create_request_id: null, create_started_at: null, realm_id: null, environment: null } : {}),
+      });
+      throw e;
+    }
+  });
+}
+
+/** Called by the authenticated Zapier callback route. Idempotent. */
+export async function applyZapierCallback(cb: ZapierCallback) {
+  const { data, error } = await db().from("reservation_invoices").select("*")
+    .eq("create_request_id", cb.request_id).maybeSingle();
+  if (error) throw new Error("Invoice lookup failed.");
+  if (!data) return { matched: false as const };
+  const row = data as InvoiceRow;
+  return withLock(`invoice:${row.id}`, async () => {
+    const current = await readInvoice(row.id);
+    if (current.qbo_invoice_id) {
+      if (cb.invoice_id && cb.invoice_id !== current.qbo_invoice_id) {
+        await audit(current, "zapier", `duplicate_callback_different_invoice:${cb.invoice_id}`);
+        await patch(row.id, { last_error: `Zapier reported a second QuickBooks invoice (ID ${cb.invoice_id}) for this request. Void the duplicate in QuickBooks.` });
+      }
+      return { matched: true as const, row: await readInvoice(row.id) };
+    }
+    if (cb.status === "failed") {
+      await patch(row.id, { last_error: `Zapier reported a failure: ${cb.error || "no details"}. Fix it in Zapier, then resend from this page.` });
+      await audit(current, "zapier", "zapier_reported_failure");
+      return { matched: true as const, row: await readInvoice(row.id) };
+    }
+    const draft = draftSchema.parse(current.draft);
+    const saved = snapshotFromCallback(cb, draft);
+    const subtotal = draft.lines.reduce((s, l) => s + l.amount, 0);
+    await patch(row.id, {
+      qbo_invoice_id: saved.id, snapshot: saved,
+      status: saved.emailStatus === "EmailSent" ? "sent" : "created",
+      ...(saved.emailStatus === "EmailSent" ? { sent_at: new Date().toISOString() } : {}),
+      last_error: saved.total + 0.005 < subtotal
+        ? `QuickBooks total ${saved.total.toFixed(2)} is below the portal subtotal ${subtotal.toFixed(2)}. Check the invoice in QuickBooks.`
+        : null,
+    });
+    await audit(current, "zapier", "invoice_created_in_quickbooks_via_zapier");
+    return { matched: true as const, row: await readInvoice(row.id) };
+  });
+}

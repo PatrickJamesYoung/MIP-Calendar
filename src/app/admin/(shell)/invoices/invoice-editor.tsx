@@ -8,7 +8,8 @@ const field = "mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py
 const button = "min-h-11 rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium disabled:opacity-50";
 const money = (amount: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
 
-export function InvoiceEditor({ initial, enabled }: { initial: InvoiceRow; enabled: boolean }) {
+export function InvoiceEditor({ initial, enabled, mode = "direct" }: { initial: InvoiceRow; enabled: boolean; mode?: "zapier" | "direct" }) {
+  const zapier = mode === "zapier";
   const [row, setRow] = useState(initial);
   const [draft, setDraft] = useState<InvoiceDraft>(initial.draft);
   const [error, setError] = useState("");
@@ -33,6 +34,9 @@ export function InvoiceEditor({ initial, enabled }: { initial: InvoiceRow; enabl
       if (!result.ok) { setError(result.error); return; }
       setRow(result.row); setDraft(result.row.draft);
       setNotice(action === "save" ? "Local draft saved. Nothing has been created or sent in QuickBooks."
+        : action === "create" && zapier ? result.row.qbo_invoice_id
+          ? `QuickBooks invoice #${result.row.snapshot?.number} is linked to this reservation.`
+          : "Sent to Zapier. QuickBooks usually finishes within a minute; select Check for QuickBooks result to update this page."
         : action === "create" ? result.row.status === "sent"
           ? "QuickBooks reports this invoice already sent. Check the warning below before invoicing again."
           : "Invoice created in QuickBooks, not sent. Review the final invoice, including any tax, before sending."
@@ -42,7 +46,9 @@ export function InvoiceEditor({ initial, enabled }: { initial: InvoiceRow; enabl
   }
   const final = row.snapshot;
   return <div className="space-y-6">
-    <p className="text-sm text-neutral-600">Local draft → Create in QuickBooks → Review final invoice → Send. No invoice is created or emailed automatically.</p>
+    <p className="text-sm text-neutral-600">{zapier
+      ? "Review charges → Create invoice (Zapier creates it in MIP QuickBooks) → Zapier reports the invoice number back here. Nothing is emailed to the customer by this button."
+      : "Local draft → Create in QuickBooks → Review final invoice → Send. No invoice is created or emailed automatically."}</p>
     {error && <p role="alert" className="rounded border border-red-300 bg-red-50 p-4">{error}</p>}
     {notice && <p role="status" className="rounded border border-green-300 bg-green-50 p-4">{notice}</p>}
     {row.last_error && <p className="rounded border border-amber-300 bg-amber-50 p-4">Last operation: {row.last_error}</p>}
@@ -51,7 +57,7 @@ export function InvoiceEditor({ initial, enabled }: { initial: InvoiceRow; enabl
         <h2 className="text-lg font-semibold">{editable ? "Invoice draft" : "Submitted invoice details"}</h2>
         <span className="rounded border px-3 py-1 text-sm">Status: {row.status === "created" ? "Created, not sent" : row.status}</span>
       </div>
-      {editable && <div className="space-y-3 border-b pb-5">
+      {editable && !zapier && <div className="space-y-3 border-b pb-5">
         <label className="block">Find an existing QuickBooks customer
           <input className={field} value={query} onChange={e => setQuery(e.target.value)} placeholder="Organization or customer name" />
         </label>
@@ -117,13 +123,21 @@ export function InvoiceEditor({ initial, enabled }: { initial: InvoiceRow; enabl
         <button className={button} disabled={pending} onClick={() => act("save")}>Save local draft</button>
         <label className="flex items-start gap-3"><input className="mt-1 h-5 w-5" type="checkbox" checked={confirmCreate}
           disabled={dirty || pending || !enabled} onChange={e => setConfirmCreate(e.target.checked)} />
-          <span>I reviewed these saved charges and customer details. Create a real invoice in the connected QuickBooks company, without sending it yet.</span>
+          <span>I reviewed these saved charges and customer details. Create a real invoice in {zapier ? "MIP QuickBooks through Zapier (it finds or creates the customer by name and email)" : "the connected QuickBooks company"}, without sending it yet.</span>
         </label>
         {dirty && <p className="text-sm">Save your changes before creating the invoice.</p>}
         <button className={`${button} bg-neutral-900 text-white`} disabled={pending || dirty || !confirmCreate || !enabled}
-          onClick={() => act("create")}>Create invoice in QuickBooks</button>
+          onClick={() => act("create")}>{zapier ? "Create invoice in QuickBooks via Zapier" : "Create invoice in QuickBooks"}</button>
       </div>}
-      {row.status === "creating" && <div className="space-y-3 border-t pt-4">
+      {row.status === "creating" && zapier && <div className="space-y-3 border-t pt-4">
+        <p>Sent to Zapier{row.create_started_at ? ` at ${new Date(row.create_started_at).toLocaleString("en-US", { timeZone: "America/New_York" })} ET` : ""}. Waiting for Zapier to report the QuickBooks invoice. This draft is locked to protect against duplicates.</p>
+        <div className="flex flex-wrap gap-3">
+          <button className={`${button} bg-neutral-900 text-white`} disabled={pending} onClick={() => act("reload")}>Check for QuickBooks result</button>
+          <button className={button} disabled={pending || !enabled} onClick={() => act("create")}>Resend same request to Zapier</button>
+        </div>
+        <p className="text-sm text-neutral-600">Resend only if Zap history shows the run did not arrive or failed. The Zap skips creation when invoice number {String((row.create_payload as { doc_number?: string } | null)?.doc_number ?? "")} already exists.</p>
+      </div>}
+      {row.status === "creating" && !zapier && <div className="space-y-3 border-t pt-4">
         <p>The creation result is unresolved. This draft is locked to protect against duplicates. Retry uses the same saved request, not a new invoice.</p>
         <button className={button} disabled={pending || !enabled} onClick={() => act("create")}>Recover creation result</button>
       </div>}
@@ -134,10 +148,14 @@ export function InvoiceEditor({ initial, enabled }: { initial: InvoiceRow; enabl
         {final.cc && <>CC: {final.cc}<br /></>}{final.bcc && <>BCC: {final.bcc}<br /></>}
         Invoice date: {final.invoiceDate}<br />Due: {final.dueDate}<br />
         Total including tax: <strong>{money(final.total)}</strong><br />
-        Outstanding balance: {money(final.balance)}<br />
-        Payment status: {final.balance === 0 ? "Paid / no balance" : final.balance < final.total ? "Partially paid" : "Unpaid"}</p>
+        {!zapier && <>Outstanding balance: {money(final.balance)}<br />
+        Payment status: {final.balance === 0 ? "Paid / no balance" : final.balance < final.total ? "Partially paid" : "Unpaid"}</>}</p>
       <ul className="space-y-1 text-sm">{final.lines.map((l, i) => <li key={i} className="flex justify-between gap-4"><span>{l.description}</span><span>{money(l.amount)}</span></li>)}</ul>
       <p className="whitespace-pre-wrap text-sm">{final.memo}</p>
+      {zapier ? <div className="flex flex-wrap gap-3">
+        <a className={`${button} bg-neutral-900 text-white`} href={`https://qbo.intuit.com/app/invoice?txnId=${encodeURIComponent(final.id)}`} target="_blank" rel="noopener noreferrer">Open invoice in QuickBooks</a>
+        <p className="text-sm text-neutral-600">Review and send it from QuickBooks. Payments and later edits are tracked in QuickBooks, not here.</p>
+      </div> : <>
       <p className="text-sm">QuickBooks email status: {final.emailStatus}. Refresh to check for changes or payments.</p>
       <div className="flex flex-wrap gap-3">
         <a className={button} href={`/api/admin/invoices/${row.id}/pdf`} target="_blank" rel="noopener noreferrer">Preview invoice PDF</a>
@@ -151,6 +169,7 @@ export function InvoiceEditor({ initial, enabled }: { initial: InvoiceRow; enabl
         <button className={`${button} bg-neutral-900 text-white`} disabled={pending || !confirmSend || !enabled}
           onClick={() => act("send")}>{row.status === "sending" ? "Check and recover send" : "Send invoice through QuickBooks"}</button>
       </div>}
+      </>}
     </section>}
     <button className={button} disabled={pending} onClick={() => act("reload")}>Reload saved invoice state</button>
     {pending && <p role="status" className="text-sm">Working. Please keep this page open.</p>}

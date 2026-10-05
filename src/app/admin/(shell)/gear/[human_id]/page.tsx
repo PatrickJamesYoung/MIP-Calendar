@@ -359,9 +359,9 @@ export default async function GearReservationDetail(props: {
 
           <div className="rounded-lg border p-4">
             <h2 className="text-lg font-semibold">Invoice</h2>
-            <p className="mt-1 text-sm text-neutral-600">Review itemized charges and send through MIP QuickBooks.</p>
+            <p className="mt-1 text-sm text-neutral-600">Review itemized charges, then create the invoice in MIP QuickBooks with one click.</p>
             <Link className="mt-3 inline-block rounded border px-4 py-2 text-sm font-medium" href={`/admin/invoices/gear/${encodeURIComponent(human_id)}`}>
-              Open invoice
+              Create / view QuickBooks invoice
             </Link>
           </div>
           <EmailsPanel emails={emailsData} />
