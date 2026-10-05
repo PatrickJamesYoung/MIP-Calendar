@@ -114,6 +114,35 @@ def run() -> None:
             "date": "9/24/2026",
             "movement_calendar": "Posted",
         },
+        # 11. Grassroots re-listing of a Free DC event, retitled so title
+        #     matching can't catch it; detail page links to freedcproject.org.
+        {
+            "source": "Grassroots DC",
+            "title": "Freedom Dreaming in Ward 8",
+            "date": "10/15/2026",
+            "event_url": "https://grassrootsdc.org/events-list/2026/freedom-dreaming-in-ward-8",
+        },
+        # 12. Grassroots event whose list-page description names Free DC.
+        {
+            "source": "Grassroots DC",
+            "title": "Know Your Rights",
+            "date": "10/16/2026",
+            "description": "Join us with Free DC for this Know Your Rights presentation!",
+        },
+        # 13. Lowercase "free DC" phrase is NOT the org — keep.
+        {
+            "source": "Grassroots DC",
+            "title": "Community Safety Fair 2026",
+            "date": "10/24/2026",
+            "description": "learn how to co-create a sustainable safe and free DC.",
+            "event_url": "https://grassrootsdc.org/events-list/2026/community-safety-fair-2026",
+        },
+        # 14. Non-Grassroots source mentioning Free DC is untouched.
+        {
+            "source": "Mobilize",
+            "title": "Canvass with Free DC partners",
+            "date": "10/20/2026",
+        },
         # 10. Fresh The 51st listing — kept.
         {
             "source": "The 51st",
@@ -123,6 +152,17 @@ def run() -> None:
     ]
 
     (tmp / "new_events.json").write_text(json.dumps(events))
+    (tmp / "raw_grassroots_details.json").write_text(
+        json.dumps(
+            {
+                "https://grassrootsdc.org/events-list/2026/freedom-dreaming-in-ward-8": {
+                    "free_dc": True,
+                    "evidence": "link: https://freedcproject.org/event-list/freedom-dreaming-session-ward8",
+                },
+                "https://grassrootsdc.org/events-list/2026/community-safety-fair-2026": {"free_dc": False},
+            }
+        )
+    )
 
     rc = csd.main()
     assert rc == 0
@@ -186,6 +226,17 @@ def run() -> None:
 
     # #10 — fresh The 51st row kept.
     assert ("The 51st", "D.C. Community Organizing Festival") in kept_titles
+
+    # #11/#12 — Grassroots Free DC re-listings dropped.
+    assert ("Grassroots DC", "Freedom Dreaming in Ward 8") not in kept_titles
+    assert ("Grassroots DC", "Know Your Rights") not in kept_titles
+    assert sum(r["match_type"] == "grassroots_free_dc" for r in report["entries"]) == 2
+
+    # #13 — lowercase phrase is not the org.
+    assert ("Grassroots DC", "Community Safety Fair 2026") in kept_titles
+
+    # #14 — rule is Grassroots-only.
+    assert ("Mobilize", "Canvass with Free DC partners") in kept_titles
 
     print("\n✅ ALL ASSERTIONS PASSED")
 
