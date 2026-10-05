@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allocateCents, draftSchema, etDate, plusDays, reviewFingerprint, salesLines, type InvoiceSnapshot } from "./model";
+import { allocateCents, draftSchema, etDate, plusDays, reviewFingerprint, salesLines, slidingScale, type InvoiceSnapshot } from "./model";
 
 const draft = {
   customerId: "", customerName: "Test organization", email: "billing@example.org",
@@ -56,5 +56,24 @@ describe("reservation invoice amounts and dates", () => {
     expect(reviewFingerprint(s)).toBe(reviewFingerprint(reordered));
     expect(reviewFingerprint(s)).not.toBe(reviewFingerprint({ ...s, total: 11 }));
     expect(reviewFingerprint(s)).not.toBe(reviewFingerprint({ ...s, bcc: "other@example.org" }));
+  });
+});
+
+describe("slidingScale", () => {
+  it("explains a discounted tier on the memo and each line", () => {
+    const s = slidingScale({ tier: "mid", multiplier: 0.85, listedTotal: 200, contribution: 170, label: "Small organization or coalition" })!;
+    expect(s.memo).toContain("Tier 2 of 3 (Small organization or coalition), 85% of the listed rate");
+    expect(s.memo).toContain("Listed rate $200.00; your sliding-scale contribution is $170.00");
+    expect(s.format(40)).toBe(" (listed $40.00; Tier 2 rate, 85%)");
+  });
+  it("omits long form-style labels and line notes at the full rate", () => {
+    const s = slidingScale({ tier: "full", multiplier: 1, listedTotal: 50, contribution: 50,
+      label: "We're a larger or well-resourced organization and can contribute the amount listed." })!;
+    expect(s.tierName).toBe("Tier 1 of 3");
+    expect(s.memo).toContain("the full listed rate");
+    expect(s.format(50)).toBe("");
+  });
+  it("returns null without a tier", () => {
+    expect(slidingScale({ tier: null, multiplier: 1, listedTotal: 0, contribution: 0 })).toBeNull();
   });
 });

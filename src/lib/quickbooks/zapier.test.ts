@@ -36,7 +36,7 @@ describe("payload", () => {
     invoiceRecordId: "rec", requestId: "req", callbackUrl: "cb", requestedBy: "a@b.org" });
   it("sends each line as qty 1 at the exact total so QuickBooks matches to the cent", () => {
     expect(p.line_items.map(l => [l.quantity, l.rate])).toEqual([[1, 33.34], [1, 66.66]]);
-    expect(p.line_items[0].description).toBe("Wireless mic × 3");
+    expect(p.line_items[0].description).toBe("3 × Wireless mic");
     expect(p.subtotal).toBe(100);
   });
   it("uses the reservation ID as the QuickBooks invoice number", () => {
